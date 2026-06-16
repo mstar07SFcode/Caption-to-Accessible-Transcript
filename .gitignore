@@ -1,0 +1,24 @@
+# Never commit caption content or generated documents — these are user data.
+Raw_Captions/
+Edited_Captions/
+Archived_Captions/
+VTT_Files/
+HTML_Transcripts/
+Flag_Logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local judgment scratch
+*.judgment.json
+*.cues.txt
+
+# OS
+.DS_Store
+
+# Secrets — never commit API keys
+.env
+*.key

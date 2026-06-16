@@ -1,0 +1,14 @@
+{
+  "name": "caption-to-accessible-transcript",
+  "version": "0.1.0",
+  "description": "Clean auto-generated video captions to a WCAG 2.1 AA standard and publish accessible HTML transcripts. Three skills (Caption Cleanup, Apply Flag Log, Transcript Publish) backed by a pure-Python pipeline; AI judgment via your own Claude or the Anthropic API.",
+  "author": {
+    "name": "USF"
+  },
+  "keywords": ["accessibility", "captions", "transcripts", "wcag", "vtt", "panopto"],
+  "skills": [
+    "./skills/caption-cleanup",
+    "./skills/flaglog-apply",
+    "./skills/transcript-publish"
+  ]
+}
