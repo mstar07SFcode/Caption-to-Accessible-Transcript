@@ -29,7 +29,7 @@ you run it standalone, from the **Anthropic API**.
 In **Claude Code**:
 
 ```
-/plugin marketplace add <your-org>/Caption-to-Accessible-Transcript
+/plugin marketplace add mstar07SFcode/Caption-to-Accessible-Transcript
 /plugin install caption-to-accessible-transcript
 ```
 

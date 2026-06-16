@@ -1,7 +1,8 @@
 {
   "name": "caption-to-accessible-transcript",
   "owner": {
-    "name": "USF"
+    "name": "M. Baker",
+    "url": "https://github.com/mstar07SFcode"
   },
   "plugins": [
     {
