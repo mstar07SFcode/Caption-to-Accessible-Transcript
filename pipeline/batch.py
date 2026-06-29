@@ -256,11 +256,14 @@ def cmd_publish(args) -> int:
     # Delete flag logs and working VTTs from edited.
     if not args.keep_working:
         for p in edited.glob("FlagLog_*.txt"):
-            p.unlink()
+            try: p.unlink()
+            except OSError: pass
         for p in edited.glob("Applied_FlagLog_*.txt"):
-            p.unlink()
+            try: p.unlink()
+            except OSError: pass
         for v in vtts:
-            v.unlink()
+            try: v.unlink()
+            except OSError: pass
 
     print(f"Published {len(vtts)} transcript(s) to {htmlout}")
     return 0

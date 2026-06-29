@@ -38,23 +38,43 @@ class ReviewEntry:
 def write_flaglog(source_filename: str,
                   corrections: list[Correction],
                   reviews: list[ReviewEntry]) -> str:
+    # Split corrections into [unrecognized] markers vs. regular corrections
+    unrecognized = [c for c in corrections if "[unrecognized]" in c.description]
+    regular = [c for c in corrections if "[unrecognized]" not in c.description]
+
     out: list[str] = []
     out.append("CAPTION CLEANUP FLAG LOG")
     out.append(f"File: {source_filename}")
     out.append(RULE)
     out.append("")
-    out.append("CORRECTIONS APPLIED")
-    out.append("These corrections were applied with ≥90% confidence.")
+
+    # [UNRECOGNIZED] section — show first so it's prominent
+    out.append("[UNRECOGNIZED] MARKERS INSERTED")
+    out.append("These entries contained unintelligible text. The garbled token(s) have")
+    out.append("been replaced with [unrecognized] in the VTT. Please listen and correct.")
     out.append("")
-    if corrections:
-        for c in corrections:
+    if unrecognized:
+        for c in unrecognized:
             out.append(f"  • Entry {c.entry}: {c.description}")
     else:
         out.append("  (none)")
     out.append("")
     out.append(RULE)
     out.append("")
-    out.append("ENTRIES REQUIRING HUMAN REVIEW")
+
+    out.append("CORRECTIONS APPLIED")
+    out.append("These corrections were applied with ≥90% confidence.")
+    out.append("")
+    if regular:
+        for c in regular:
+            out.append(f"  • Entry {c.entry}: {c.description}")
+    else:
+        out.append("  (none)")
+    out.append("")
+    out.append(RULE)
+    out.append("")
+    n = len(reviews)
+    out.append(f"ENTRIES REQUIRING HUMAN REVIEW  ({n} {'entry' if n == 1 else 'entries'})")
     out.append("These entries contain likely auto-caption errors that could not be")
     out.append("corrected with confidence. Please listen to the video and correct")
     out.append("the cleaned file as needed.")
@@ -70,7 +90,6 @@ def write_flaglog(source_filename: str,
         out.append("  (none)")
         out.append("")
     out.append(RULE)
-    n = len(reviews)
     out.append(f"{n} {'entry requires' if n == 1 else 'entries require'} review.")
     return "\n".join(out) + "\n"
 

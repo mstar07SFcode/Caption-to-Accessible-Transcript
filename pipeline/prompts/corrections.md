@@ -17,9 +17,40 @@ Return ONLY a single JSON object (no prose, no markdown fences) with this shape:
   ],
   "flags": [
     {"entry": 51, "found": "<the full cue text of that entry>",
-     "issue": "<why it may be wrong>", "possible": "<suggested reading or 'Listen to verify'>"}
+     "issue": "<why it may be wrong>", "possible": "<replacement text or exactly 'Listen to verify'>"}
   ]
 }
+
+STRICT RULE FOR THE `possible` FIELD — read this before writing any flag
+
+`possible` must contain EXACTLY ONE of:
+  a. A proposed replacement string — the corrected text that would replace `found`
+     if the reviewer accepts it. Write it as a complete, ready-to-apply substitution.
+  b. The exact string "Listen to verify" — use this when the correct reading cannot
+     be determined from context, or when the text appears correct as verbatim speech
+     and simply needs a human to confirm it against the audio.
+
+`possible` must NEVER contain editorial commentary, instructions, or notes.
+
+INVALID — do not write these:
+  ✗  "Retain verbatim"
+  ✗  "Retain verbatim or confirm identity of speaker"
+  ✗  "Confirm with speaker"
+  ✗  "Keep as-is pending review"
+  ✗  "Check this proper name"
+  ✗  "May be correct — verify"
+  ✗  Any sentence that is an instruction rather than a replacement
+
+VALID examples:
+  ✓  "Thomson Reuters"                                  ← direct replacement
+  ✓  "contemporaneously"                                ← direct replacement
+  ✓  "Listen to verify"                                 ← signals skip on apply
+  ✓  "Amy? Yes, please. There you go."                  ← same as found = keep verbatim
+
+When the text seems correct but you want a human to check it (e.g. a proper name
+you cannot verify, or verbatim speech that is unusual but probably right), write
+`"Listen to verify"` — NOT a commentary. The apply step skips "Listen to verify"
+entries safely, and the reviewer sees the Issue note for context.
 
 RULES FOR PRODUCING CORRECTIONS AND FLAGS
 
@@ -44,9 +75,20 @@ RULES FOR PRODUCING CORRECTIONS AND FLAGS
    noun (e.g. find "This chapter" replace "this chapter"). Entries beginning with
    subordinating/coordinating conjunctions almost always continue the prior cue.
 
-5. Capitalization: lowercase over-capitalized COMMON nouns mid-sentence
-   (e.g. "Web page" -> "web page"); keep genuine proper nouns capitalized
-   (e.g. "Canvas" the LMS). Capitalize the first word of a sentence.
+5. Capitalization — REQUIRED PASS on every cue list:
+   a. Scan ALL entries for over-capitalized common nouns mid-sentence and emit
+      a correction for each one. Auto-captioners capitalize random words —
+      do not skip this pass even when an entry has no other issues.
+      Common offenders: "Web page", "Internet", "Email", "Document", "File",
+      "Video", "Course", "Module", "Template", "Section", "Chapter", "Table",
+      "Figure", "Report", "Data", "Tool", "Button", "Menu", "Screen", "Page",
+      "Link", "User", "Account", "Manager", "Director", "Professor", "Student".
+   b. Keep genuine proper nouns capitalized: "Canvas" (the LMS), "Panopto",
+      "YouTube", personal names, organization names, official product names,
+      course titles, and UI button labels that are literal interface text.
+   c. Capitalize the first word of every sentence. After sentence-continuation
+      corrections (rule 4), ensure the first word of the continuing entry is
+      lowercased if it is not a proper noun.
 
 6. Possessives: add a dropped apostrophe when context is unambiguous
    (e.g. "clients governance group" -> "client's governance group"). This is
@@ -54,6 +96,7 @@ RULES FOR PRODUCING CORRECTIONS AND FLAGS
 
 7. Remove filler is already handled mechanically — do NOT emit corrections for
    um/uh/ah/er. Do NOT remove "so / you know / I mean / right / well".
+
 
 8. Doubled words (e.g. "the the") are PRESERVED at this stage — do not correct
    them. They are cleaned later at publish.

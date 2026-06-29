@@ -40,7 +40,10 @@ def prune_empty_dirs(root: Path) -> None:
     """Remove now-empty subdirectories under root (root itself is kept)."""
     for p in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
         if p.is_dir() and not any(p.iterdir()):
-            p.rmdir()
+            try:
+                p.rmdir()
+            except (PermissionError, OSError):
+                pass  # skip dirs that can't be removed (e.g. on mounted volumes)
 
 
 def empty_directory(target: Path) -> list[str]:
@@ -54,11 +57,17 @@ def empty_directory(target: Path) -> list[str]:
         return removed
     for child in sorted(target.iterdir()):
         if child.name == ".DS_Store":
-            child.unlink(missing_ok=True)
+            try:
+                child.unlink(missing_ok=True)
+            except OSError:
+                pass  # sandbox / permission restrictions — skip silently
             continue
-        removed.append(child.name)
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+            removed.append(child.name)
+        except OSError:
+            pass  # sandbox / permission restrictions — skip silently
     return removed

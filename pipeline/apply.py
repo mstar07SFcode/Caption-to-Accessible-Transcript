@@ -8,9 +8,34 @@ its own — only mechanical application of the JSON.
 
 from __future__ import annotations
 
+import re
+
 from .parse import Cue
 from .judgment import CleanupJudgment
 from .flaglog import Correction, ReviewEntry
+
+
+def _collapse_punctuation(text: str) -> str:
+    """Collapse any run of consecutive punctuation marks (.,?!) to a single mark.
+
+    Applied after all AI corrections so that find/replace collisions (e.g. a
+    correction that adds a comma where one already existed) don't leave doubled
+    or mixed punctuation in the output.
+
+    Priority when marks differ: terminal (. ? !) beats comma; among terminals
+    the first one in the run is kept.  Intentional ellipses (...) are preserved.
+    """
+    # Protect intentional ellipses
+    text = text.replace('...', '\x00')
+    # Collapse any run of 2+ punctuation chars to one
+    def _pick(m: re.Match) -> str:
+        for ch in m.group(0):
+            if ch in '.?!':
+                return ch
+        return ','   # all commas
+    text = re.sub(r'[.,?!]{2,}', _pick, text)
+    # Restore ellipses
+    return text.replace('\x00', '...')
 
 
 def apply_cleanup(cues: list[Cue], judgment: CleanupJudgment
@@ -31,6 +56,10 @@ def apply_cleanup(cues: list[Cue], judgment: CleanupJudgment
             corrections.append(Correction(
                 entry=entry, description=f"'{find}' → '{replace}' — {reason}"))
         # If the find text isn't present, silently skip (judgment may be stale).
+
+    # Post-processing: collapse any consecutive punctuation introduced by corrections
+    for cue in cues:
+        cue.text = _collapse_punctuation(cue.text)
 
     reviews: list[ReviewEntry] = []
     for flag in judgment.flags:

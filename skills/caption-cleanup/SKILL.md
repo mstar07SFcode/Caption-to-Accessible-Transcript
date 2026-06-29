@@ -48,16 +48,20 @@ user's working folder.
    archives the sources, and writes one `<stem>.cues.txt` per file to
    `$WF/.judgment`. Note any duplicate/copy collisions it reports.
 
-4. **Judgment (your job, per file).** For each `$WF/.judgment/<stem>.cues.txt`:
-   read the numbered cues and apply the rules to produce a judgment JSON file at
-   `$WF/.judgment/<stem>.judgment.json` exactly matching the schema in
-   `corrections.md` (`corrections` + `flags`). Apply corrections only at ≥90%
-   confidence; otherwise flag. Never insert words except high-confidence
-   misrecognition restoration (e.g. "will"→"we'll"). Preserve speaker grammar.
-   - **If there are more than 3 files, process each file in its own sub-agent**
-     (Task tool) so the main context stays small; have each sub-agent write its
-     `<stem>.judgment.json` and report only a one-line status.
+4. **Judgment — ALWAYS use parallel sub-agents.** Count the `.cues.txt` files
+   in `$WF/.judgment`. **Do NOT read any cues file into the main context.**
+   Instead, immediately launch one Agent per file in a single parallel tool call
+   (all in the same message). Each agent receives: the cues file path, the rules
+   summary, the JSON schema, and instructions to write `<stem>.judgment.json`
+   and report one status line. This applies even for small batches — reading
+   cues files into the main context is always wrong and makes the session slow.
 
+   Each agent should:
+   - Read its assigned `<stem>.cues.txt` via bash
+   - Apply the rules (corrections at ≥90% confidence, otherwise flag)
+   - Write `$WF/.judgment/<stem>.judgment.json`
+   - Report: `DONE: N corrections, N flags` or `ERROR: reason`
+   
 5. **Apply judgment:**
    ```bash
    cd "${CLAUDE_PLUGIN_ROOT}" && python3 -m pipeline.batch apply-judgment \

@@ -49,10 +49,33 @@ The pipeline empties `Archived_Captions` first, writes HTML to
 working files in `Edited_Captions`. Afterward, delete the `$WF/.judgment`
 scratch folder.
 
+## Output Filename Naming Rules
+
+Apply these rules to every HTML transcript filename (and its `<title>` / `<h1>`) before saving:
+
+**1. Remove duplicate module prefix.**
+Source filenames from Zoom/Canvas recordings sometimes repeat the module
+number: `MSAS-603_M4_M4Lapping`. Strip the second occurrence so the segment
+after the module token starts directly with the topic:
+- ✅ `Transcript_MSAS-603_M4_Lapping.html`
+- ❌ `Transcript_MSAS-603_M4_M4Lapping.html`
+
+**2. Remove orphaned attempt numbers.**
+A trailing number or version suffix (e.g. `2`, `1`, `V3`) that has no
+counterpart in the same folder is an artifact of the recording attempt, not
+meaningful to students. Remove it.
+- If `filename2` exists but `filename1` does not → rename to `filename`.
+- If `filename1` exists but `filename2` does not → rename to `filename`.
+- If `filenameV3` exists but `filenameV1` / `filenameV2` do not → rename to `filename`.
+- If a genuine sequence exists (both `filename1` and `filename2` are present) → keep the numbers.
+
+Apply both rules to the HTML `<title>` and `<h1>` tag as well as the filename.
+
 ## Report
 
 Number of transcripts published; confirm files are in `HTML_Transcripts` and
-Panopto-ready VTTs in `VTT_Files`.
+Panopto-ready VTTs in `VTT_Files`. Note any filenames corrected under the
+naming rules above.
 
 ## Alternative: Anthropic API
 

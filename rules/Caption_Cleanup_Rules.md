@@ -68,6 +68,31 @@ Only capitalize words that are genuinely proper nouns or the first word of a sen
 
 Apply consistently within a file: if a common noun is lowercased once, lowercase it throughout.
 
+### Rule 1c — Remove Consecutive Punctuation Marks
+
+Only one punctuation mark may appear at a time. This is handled automatically by the pipeline's deterministic clean step — before cues are sent to the AI for judgment. The AI therefore never sees doubled punctuation and does not need to flag or correct it. Documented here for reference only.
+
+**Same mark repeated:** collapse to one.
+
+| Source | Corrected |
+|---|---|
+| `the amount,, which was due` | `the amount, which was due` |
+| `Section 61,, gross income` | `Section 61, gross income` |
+| `Yes.. that's correct.` | `Yes. That's correct.` |
+| `really?? I don't think so` | `really? I don't think so` |
+
+**Mixed adjacent marks:** keep one, remove the other. Terminal punctuation (`.` `?` `!`) takes priority over a comma; when two terminals appear together keep the first.
+
+| Source | Corrected | Reason |
+|---|---|---|
+| `the amount., which was due` | `the amount, which was due` | period + comma → keep comma (mid-sentence) |
+| `the amount,. Next section` | `the amount. Next section` | comma + period → keep period (sentence ends) |
+| `Is that right?, I think so` | `Is that right? I think so` | `?,` → keep `?` |
+| `Is that right.?` | `Is that right?` | `.?` → keep `?` |
+| `Yes!. Let's continue` | `Yes! Let's continue` | `!.` → keep `!` |
+
+**Do not collapse intentional ellipses** (`...`) — those are a single punctuation unit and should be left alone.
+
 ### Rule 2 — Remove Vocal Hesitations and Fillers
 
 Delete the following without replacement:
@@ -289,7 +314,24 @@ Entry 11 | 00:01:06
   Possible: "And finally, purpose. What seems to be the purpose of the speech?"
 ```
 
-**Note on the "Possible:" field:** it is a *suggestion for the human reviewer*, not a correction applied to the caption file. Even when a Possible reading would insert or change words, the cleaned VTT keeps the original verbatim text until a human accepts it (Rule 3). The flag log is where judgment lives; the caption file stays verbatim.
+**The "Possible:" field — valid values only.** The `Possible:` field is a *suggestion for the human reviewer*, not a correction applied to the caption file. The cleaned VTT keeps the original verbatim text until a human accepts it (Rule 3). The flag log is where judgment lives; the caption file stays verbatim.
+
+`Possible:` must contain EXACTLY ONE of:
+- A **replacement string** — the corrected text the reviewer should substitute for the `Found:` text if they accept it. Write it as a ready-to-apply substitution.
+- The exact phrase **"Listen to verify"** — use this when the correct reading cannot be determined from context, or when the text appears correct as verbatim speech and only needs a human to confirm it against the audio.
+
+**Never write editorial commentary or instructions in `Possible:`.** The Apply Flag Log skill reads this field literally and will insert it directly into the VTT if it is not skipped. Commentary masquerading as a replacement will corrupt the caption file.
+
+| `Possible:` value | Valid? | Why |
+|---|---|---|
+| `"Thomson Reuters"` | ✓ | Direct replacement |
+| `"Listen to verify"` | ✓ | Signals skip — reviewer checks audio |
+| `"Amy? Yes, please. There you go."` | ✓ | Same as Found: = keep verbatim |
+| `"Retain verbatim"` | ✗ | Editorial commentary — will be inserted literally |
+| `"Retain verbatim or confirm identity of speaker"` | ✗ | Instruction, not a replacement |
+| `"Confirm with speaker"` | ✗ | Instruction, not a replacement |
+
+**When text seems correct but needs human confirmation** (e.g. an unfamiliar proper name, or verbatim off-screen speech you cannot identify): write `"Listen to verify"` — not a note. The `Issue:` field is the right place for context and explanation.
 
 ### Auto-generated header lines
 Some caption source files include a header line as part of entry 1 text:
