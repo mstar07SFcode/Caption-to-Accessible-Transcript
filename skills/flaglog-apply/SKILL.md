@@ -18,7 +18,7 @@ text), edit the `Possible:` text, or delete the whole entry block (skip it).
 Let `WF` be the user's working folder.
 
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}" && python3 -m pipeline.batch apply-flaglog \
+cd "${CLAUDE_PLUGIN_ROOT}/skills/flaglog-apply" && python3 -m pipeline.batch apply-flaglog \
     --edited "$WF/Edited_Captions"
 ```
 

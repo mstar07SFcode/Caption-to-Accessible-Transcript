@@ -11,7 +11,7 @@ accessible HTML transcript, archives a standards-compliant VTT, empties
 
 Deterministic parts (timecodes, duration, HTML scaffolding, header strip) are
 handled by the pipeline. Section headings and paragraph structure are AI
-judgment, governed by `${CLAUDE_PLUGIN_ROOT}/pipeline/prompts/headings.md`.
+judgment, governed by `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/pipeline/prompts/headings.md`.
 
 ## Folders (in the user's working folder)
 
@@ -26,7 +26,7 @@ Let `WF` be the user's working folder.
 
 ## Procedure
 
-1. **Judgment (recommended).** Read `${CLAUDE_PLUGIN_ROOT}/pipeline/prompts/headings.md`
+1. **Judgment (recommended).** Read `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/pipeline/prompts/headings.md`
    for the schema. For each `*.vtt` in `$WF/Edited_Captions`, read its cues
    directly and write a `<stem>.judgment.json` to `$WF/.judgment` matching that
    schema (sections, paragraph_breaks, doubled_words, sic). Use a sub-agent per
@@ -35,7 +35,7 @@ Let `WF` be the user's working folder.
 
 2. **Publish with judgment:**
    ```bash
-   cd "${CLAUDE_PLUGIN_ROOT}" && python3 -m pipeline.batch publish \
+   cd "${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish" && python3 -m pipeline.batch publish \
        --edited "$WF/Edited_Captions" --vttout "$WF/VTT_Files" \
        --html "$WF/HTML_Transcripts" --archive "$WF/Archived_Captions" \
        --judgment-dir "$WF/.judgment"

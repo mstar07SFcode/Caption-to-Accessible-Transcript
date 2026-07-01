@@ -13,7 +13,7 @@ The work is split between a deterministic Python pipeline (bundled with this
 plugin) and AI judgment. The pipeline handles filler removal, header stripping,
 SRT→VTT conversion, filenaming, and flag-log/VTT writing. The AI handles
 recognition corrections, punctuation/continuation, capitalization, and deciding
-what to flag — governed entirely by `${CLAUDE_PLUGIN_ROOT}/rules/Caption_Cleanup_Rules.md`.
+what to flag — governed entirely by `${CLAUDE_PLUGIN_ROOT}/skills/caption-cleanup/rules/Caption_Cleanup_Rules.md`.
 
 ## Folders (in the user's working folder, NOT the plugin)
 
@@ -28,8 +28,8 @@ user's working folder.
 
 ## Procedure
 
-1. **Read the rules.** Read `${CLAUDE_PLUGIN_ROOT}/rules/Caption_Cleanup_Rules.md`
-   in full and `${CLAUDE_PLUGIN_ROOT}/pipeline/prompts/corrections.md` (the
+1. **Read the rules.** Read `${CLAUDE_PLUGIN_ROOT}/skills/caption-cleanup/rules/Caption_Cleanup_Rules.md`
+   in full and `${CLAUDE_PLUGIN_ROOT}/skills/caption-cleanup/pipeline/prompts/corrections.md` (the
    judgment instructions + JSON schema). These govern every editing decision.
 
 2. **Ask for course and speaker** if not already known (applied to the batch).
@@ -38,7 +38,7 @@ user's working folder.
 
 3. **Deterministic pass + emit judgment prompts:**
    ```bash
-   cd "${CLAUDE_PLUGIN_ROOT}" && python3 -m pipeline.batch clean \
+   cd "${CLAUDE_PLUGIN_ROOT}/skills/caption-cleanup" && python3 -m pipeline.batch clean \
        --raw "$WF/Raw_Captions" --out "$WF/Edited_Captions" \
        --archive "$WF/Archived_Captions" \
        --course "<COURSE>" --speaker "<SPEAKER>" \
@@ -64,7 +64,7 @@ user's working folder.
    
 5. **Apply judgment:**
    ```bash
-   cd "${CLAUDE_PLUGIN_ROOT}" && python3 -m pipeline.batch apply-judgment \
+   cd "${CLAUDE_PLUGIN_ROOT}/skills/caption-cleanup" && python3 -m pipeline.batch apply-judgment \
        --edited "$WF/Edited_Captions" --judgment-dir "$WF/.judgment"
    ```
    This rewrites each cleaned VTT with the corrections and regenerates its flag
