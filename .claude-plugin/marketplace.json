@@ -1,0 +1,14 @@
+{
+  "name": "caption-to-accessible-transcript",
+  "owner": {
+    "name": "M. Baker",
+    "url": "https://github.com/mstar07SFcode"
+  },
+  "plugins": [
+    {
+      "name": "caption-to-accessible-transcript",
+      "source": "./",
+      "description": "Clean auto-generated captions to WCAG 2.1 AA and publish accessible HTML transcripts."
+    }
+  ]
+}
