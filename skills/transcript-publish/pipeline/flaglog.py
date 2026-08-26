@@ -2,14 +2,19 @@
 
 Writer: produces the FlagLog_<stem>.txt format (no `Cleaned:` date line).
 Applier (Step 1b): pure string find/replace — no LLM. Parses the reviewed log,
-applies each remaining entry's `Possible:` text over its `Found:` text in the
-VTT, skips listen-only notes, and reports applied/skipped/unmatched.
+applies each remaining entry's `Possible:` text over its `Found:` text **inside
+the cue that entry names**, skips listen-only notes, and reports
+applied/skipped/unmatched. Scoping each replacement to its own entry mirrors
+apply_cleanup; a whole-file replace would let a phrase flagged at one entry
+rewrite an earlier one that happens to contain the same words.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
+from .parse import TIMECODE_RE
 
 RULE = "─" * 62
 
@@ -134,16 +139,57 @@ class ApplyResult:
     new_vtt_text: str
 
 
-def apply_flaglog(vtt_text: str, flaglog_text: str) -> ApplyResult:
-    """Apply reviewed corrections to the VTT text by exact string replacement.
+def _cue_text_line_spans(vtt_text: str) -> dict[int, tuple[int, int]]:
+    """Map each cue's entry number -> [start, end) line range of its TEXT lines.
 
-    A replacement is applied only if the `Found:` text appears verbatim in the
-    VTT and the `Possible:` text is an actionable replacement (not a listen-only
-    note). Entry numbers and timecodes are untouched.
+    Walks the file's own lines rather than re-serializing it, so everything
+    that is not a cue's text — the WEBVTT line, the metadata header, NOTE
+    blocks, blank-line spacing, entry numbers and timecodes — keeps its exact
+    original bytes. Cue blocks are recognized the way parse_srt recognizes
+    them: a timecode line, optionally preceded by a numeric index line.
+    """
+    lines = vtt_text.split("\n")
+    spans: dict[int, tuple[int, int]] = {}
+    fallback_index = 0
+    i = 0
+    while i < len(lines):
+        if not TIMECODE_RE.search(lines[i]):
+            i += 1
+            continue
+        # Numeric line immediately above the timecode is the entry number.
+        idx = None
+        if i >= 1 and lines[i - 1].strip().isdigit():
+            idx = int(lines[i - 1].strip())
+        fallback_index += 1
+        entry = idx if idx is not None else fallback_index
+        # Text runs from the line after the timecode to the next blank line.
+        start = i + 1
+        end = start
+        while end < len(lines) and lines[end].strip() != "":
+            end += 1
+        # First span wins if a file somehow repeats an entry number.
+        spans.setdefault(entry, (start, end))
+        i = end
+    return spans
+
+
+def apply_flaglog(vtt_text: str, flaglog_text: str) -> ApplyResult:
+    """Apply reviewed corrections to the VTT, each scoped to its flagged entry.
+
+    A replacement is applied only if the `Possible:` text is actionable (not a
+    listen-only note) and the `Found:` text appears **within the cue the flag
+    log names**. A phrase flagged at entry 40 can therefore never rewrite entry
+    3, the metadata header, or a NOTE block; if the text is not in entry 40 it
+    is reported as unmatched, not applied elsewhere.
+
+    Only the matched cue's own text lines are rewritten. Entry numbers,
+    timecodes, header metadata, NOTE blocks and blank-line spacing keep their
+    exact original bytes.
     """
     reviews = parse_flaglog(flaglog_text)
     applied, skipped, unmatched = [], [], []
-    text = vtt_text
+    lines = vtt_text.split("\n")
+    spans = _cue_text_line_spans(vtt_text)
 
     for r in reviews:
         if not r.possible or _LISTEN_ONLY.match(r.possible):
@@ -152,14 +198,36 @@ def apply_flaglog(vtt_text: str, flaglog_text: str) -> ApplyResult:
         if not r.found:
             skipped.append((r.entry, "(no Found text)"))
             continue
-        if r.found in text:
-            text = text.replace(r.found, r.possible, 1)
-            applied.append((r.entry, r.found, r.possible))
-        else:
+        span = spans.get(r.entry)
+        if span is None:
             unmatched.append((r.entry, r.found))
+            continue
+
+        start, end = span
+        cue_text = "\n".join(lines[start:end])
+        if r.found in cue_text:
+            new_text = cue_text.replace(r.found, r.possible, 1)
+        else:
+            # A flag log's Found: is written on one line, so a cue whose text
+            # wraps across lines cannot match verbatim. Retry against the cue
+            # collapsed to a single line; on success the cue becomes one line.
+            collapsed = " ".join(cue_text.split())
+            if "\n" in cue_text and r.found in collapsed:
+                new_text = collapsed.replace(r.found, r.possible, 1)
+            else:
+                unmatched.append((r.entry, r.found))
+                continue
+
+        lines[start:end] = new_text.split("\n")
+        # Later spans shift if the cue's line count changed.
+        delta = len(new_text.split("\n")) - (end - start)
+        if delta:
+            spans = {e: (s + delta, t + delta) if s >= end else (s, t)
+                     for e, (s, t) in spans.items()}
+        applied.append((r.entry, r.found, r.possible))
 
     return ApplyResult(applied=applied, skipped=skipped,
-                       unmatched=unmatched, new_vtt_text=text)
+                       unmatched=unmatched, new_vtt_text="\n".join(lines))
 
 
 def format_apply_report(filename: str, result: ApplyResult,

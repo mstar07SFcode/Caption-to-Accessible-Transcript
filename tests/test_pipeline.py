@@ -235,6 +235,101 @@ Um, Alpha pays[unrecognized]for it.
           cleaned[0].text == f"Alpha pays {MARKER} for it.")
 
 
+def test_flaglog_scoping():
+    """A correction must land in the entry the flag log names, and nowhere else.
+
+    Regression: apply_flaglog used to run str.replace over the whole VTT text,
+    so the FIRST occurrence anywhere won — a phrase flagged at entry 40 would
+    silently rewrite entry 3, the metadata header, or a NOTE block.
+    """
+    vtt = ("WEBVTT\n"
+           "Speaker: the balance sheet date matters\n"
+           "Course: MSAS-603\n"
+           "\n"
+           "NOTE the balance sheet date matters\n"
+           "\n"
+           "3\n"
+           "00:00:10.000 --> 00:00:12.000\n"
+           "the balance sheet date matters\n"
+           "\n"
+           "40\n"
+           "00:04:11.000 --> 00:04:15.000\n"
+           "the balance sheet date matters\n")
+    log = write_flaglog("x.txt", [], [ReviewEntry(
+        40, "04:11", "the balance sheet date matters",
+        "garbled", "the balance sheet date is what matters")])
+    res = apply_flaglog(vtt, log)
+    out = res.new_vtt_text
+
+    check("flaglog scope: applied once", len(res.applied) == 1)
+    # The decisive assertion: entry 3 is untouched, entry 40 is corrected.
+    e3 = out.split("3\n00:00:10.000 --> 00:00:12.000\n")[1].split("\n")[0]
+    e40 = out.split("40\n00:04:11.000 --> 00:04:15.000\n")[1].split("\n")[0]
+    check("flaglog scope: entry 3 NOT rewritten",
+          e3 == "the balance sheet date matters")
+    check("flaglog scope: entry 40 rewritten",
+          e40 == "the balance sheet date is what matters")
+    check("flaglog scope: only one occurrence changed",
+          out.count("is what matters") == 1)
+
+    # Everything that is not cue text keeps its exact bytes.
+    check("flaglog scope: header metadata untouched",
+          "Speaker: the balance sheet date matters" in out)
+    check("flaglog scope: NOTE block untouched",
+          "NOTE the balance sheet date matters" in out)
+    check("flaglog scope: timecodes untouched",
+          "00:00:10.000 --> 00:00:12.000" in out
+          and "00:04:11.000 --> 00:04:15.000" in out)
+
+    # Text that exists in the file but NOT in the named entry is unmatched,
+    # never applied somewhere else.
+    log2 = write_flaglog("x.txt", [], [ReviewEntry(
+        40, "04:11", "a phrase only in entry 3", "x", "a replacement")])
+    vtt2 = vtt.replace("3\n00:00:10.000 --> 00:00:12.000\n"
+                       "the balance sheet date matters",
+                       "3\n00:00:10.000 --> 00:00:12.000\n"
+                       "a phrase only in entry 3")
+    res2 = apply_flaglog(vtt2, log2)
+    check("flaglog scope: wrong-entry text is unmatched",
+          not res2.applied and len(res2.unmatched) == 1)
+    check("flaglog scope: unmatched leaves file byte-identical",
+          res2.new_vtt_text == vtt2)
+
+    # An entry number the VTT does not contain is unmatched, not misapplied.
+    log3 = write_flaglog("x.txt", [], [ReviewEntry(
+        99, "09:99", "the balance sheet date matters", "x", "nope")])
+    res3 = apply_flaglog(vtt, log3)
+    check("flaglog scope: missing entry unmatched",
+          not res3.applied and len(res3.unmatched) == 1)
+    check("flaglog scope: missing entry leaves file unchanged",
+          res3.new_vtt_text == vtt)
+
+    # A cue whose text wraps across lines still matches the one-line Found:.
+    vtt4 = ("WEBVTT\n\n7\n00:00:01.000 --> 00:00:04.000\n"
+            "the year end to\nrequire procedure\n")
+    log4 = write_flaglog("x.txt", [], [ReviewEntry(
+        7, "00:01", "the year end to require procedure", "garbled",
+        "the year end is a required procedure")])
+    res4 = apply_flaglog(vtt4, log4)
+    check("flaglog scope: wrapped cue matched via collapse",
+          len(res4.applied) == 1
+          and "the year end is a required procedure" in res4.new_vtt_text)
+
+    # Two corrections where the first changes the cue's line count: the second
+    # must still land in its own entry (span bookkeeping).
+    vtt5 = ("WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\n"
+            "alpha one\nalpha two\n\n"
+            "2\n00:00:02.000 --> 00:00:03.000\nbravo here\n")
+    log5 = write_flaglog("x.txt", [], [
+        ReviewEntry(1, "00:01", "alpha one alpha two", "x", "alpha merged"),
+        ReviewEntry(2, "00:02", "bravo here", "x", "bravo fixed")])
+    res5 = apply_flaglog(vtt5, log5)
+    check("flaglog scope: both applied after line-count shift",
+          len(res5.applied) == 2)
+    check("flaglog scope: second correction landed in entry 2",
+          res5.new_vtt_text.rstrip().endswith("bravo fixed"))
+
+
 def test_publish_never_adds_text():
     """Publish Rule 3: the publish step has no way to add text to a transcript.
 
@@ -288,7 +383,8 @@ def test_title_transform():
 
 if __name__ == "__main__":
     for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
-               test_vtt, test_flaglog, test_apply_judgment, test_publish,
+               test_vtt, test_flaglog, test_flaglog_scoping,
+               test_apply_judgment, test_publish,
                test_publish_never_adds_text, test_title_transform]:
         print(f"\n# {fn.__name__}")
         fn()
