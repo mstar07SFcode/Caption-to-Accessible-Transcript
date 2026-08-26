@@ -12,11 +12,8 @@ Return ONLY a single JSON object (no prose, no markdown fences):
   ],
   "paragraph_breaks": [1, 7, 14, 22],
   "doubled_words": [{"entry": 9, "find": "the the", "replace": "the"}],
-  "sic": [{"entry": 30, "after": "AI process"}],
   "speaker_turns": [{"entry": 5, "speaker": "Dr. Smith"}],
-  "non_speech": [{"entry": 12, "description": "Applause"}],
-  "clarifications": [{"entry": 20, "after": "section 117", "insert": "referring to §117(a)"}],
-  "dropped_word_insertions": [{"entry": 14, "after": "put it out", "insert": "in"}]
+  "non_speech": [{"entry": 12, "description": "Applause"}]
 }
 
 RULES
@@ -35,45 +32,35 @@ RULES
    `find` is the doubled phrase, `replace` is the corrected phrase, scoped to
    the given entry.
 
-4. sic: where merging cues reveals a clear SPEAKER grammar error (not a
-   transcription artifact) that a reader could mistake for a typo, mark it.
-   `after` is the exact text after which "[sic]" should be inserted. Use
-   sparingly; never for informal style, only for genuine grammatical errors.
-
-5. Do not invent content, do not change wording beyond the doubled-word
+4. Do not invent content, do not change wording beyond the doubled-word
    removals listed, and do not add words. Titles you choose for sections should
    be short and descriptive of the content.
 
-6. speaker_turns: mark the entry where a NEW speaker turn begins so it can be
+   You have NO field for adding text to a transcript. Do not mark speaker
+   grammar errors with "[sic]", do not add bracketed clarifications, and do
+   not restore words the auto-captioner dropped — even an obvious missing
+   "to" or "in", and even in brackets. Reproduce the cue text as given. A
+   sentence that reads oddly because a word is missing is left exactly as it
+   is; that gap was already flagged for a human at the cleanup step, and an
+   unrecoverable word already reads as [unintelligible]. Leave any existing
+   [unintelligible] marker untouched.
+
+5. speaker_turns: mark the entry where a NEW speaker turn begins so it can be
    labeled. `speaker` is the speaker's name if known, otherwise a role label
    (Student, Moderator, Interviewer). Mark every turn change, even if the same
    speaker returns later. If there is only one speaker for the whole
    transcript, this may be empty.
 
-7. non_speech: mark an entry whose content is a non-speech audio event
+6. non_speech: mark an entry whose content is a non-speech audio event
    (e.g. an auto-captioner's [APPLAUSE], [MUSIC], [LAUGHTER] tag) rather than
    spoken words. `description` is a short label such as "Applause",
    "Laughter", "Music playing", "Silence", "Background noise". Do not mark an
    entry as non_speech if it contains any spoken words.
 
-8. clarifications: where the prose is genuinely ambiguous without added
-   context, add a bracketed clarification. `after` is the exact substring in
-   that entry after which it should appear; `insert` is the clarifying text
-   only (brackets are added by the pipeline). Use sparingly — never to fix
-   grammar or add content words.
-
-9. dropped_word_insertions: where the auto-captioner has clearly dropped a
-   small function word (a preposition, article, or auxiliary verb) and the
-   sentence is unintelligible or misleading without it, restore it. `after`
-   is the exact substring after which the missing word belongs; `insert` is
-   the missing word only (brackets are added by the pipeline). Apply only at
-   ≥90% confidence; never use this to add content words or fix grammar.
-
 Output the JSON object and nothing else.
 
-The following authoritative rules govern speaker labeling, non-speech audio,
-clarifications, and dropped-word insertions (fields 6-9 above). Apply them
-exactly:
+The following authoritative rules govern speaker labeling and non-speech audio
+(fields 5-6 above). Apply them exactly:
 
 ---
 

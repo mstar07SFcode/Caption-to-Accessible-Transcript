@@ -11,13 +11,15 @@ accessible HTML transcript, archives a standards-compliant VTT, empties
 
 Deterministic parts (timecodes, duration, HTML scaffolding, header strip) are
 handled by the pipeline. Section headings, paragraph structure, speaker
-labeling, non-speech audio, clarifications, and dropped-word insertions are
-AI judgment, governed by
+labeling, and non-speech audio are AI judgment, governed by
 `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/pipeline/prompts/headings.md`
 (schema) and `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/rules/Transcript_Publish_Rules.md`
-(the authoritative rules for speaker turns, non-speech audio,
-clarifications, and dropped-word insertions — read this in full before
-writing judgment).
+(the authoritative rules for speaker turns and non-speech audio — read this in
+full before writing judgment).
+
+**This step never adds text to a transcript** (Publish Rule 3): no `[sic]`, no
+bracketed clarifications, no restoring dropped words. Doubled-word removal is
+its only text edit.
 
 ## Folders (in the user's working folder)
 
@@ -34,13 +36,12 @@ Let `WF` be the user's working folder.
 
 1. **Judgment (recommended).** Read `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/pipeline/prompts/headings.md`
    for the schema and `${CLAUDE_PLUGIN_ROOT}/skills/transcript-publish/rules/Transcript_Publish_Rules.md`
-   for the rules governing speaker turns, non-speech audio, clarifications,
-   and dropped-word insertions. For each `*.vtt` in `$WF/Edited_Captions`,
-   read its cues directly and write a `<stem>.judgment.json` to
-   `$WF/.judgment` matching that schema (sections, paragraph_breaks,
-   doubled_words, sic, speaker_turns, non_speech, clarifications,
-   dropped_word_insertions). Use a sub-agent per file when there are more
-   than 3 files. (The `<stem>` is the VTT filename without `.vtt`.)
+   for the rules governing speaker turns and non-speech audio. For each
+   `*.vtt` in `$WF/Edited_Captions`, read its cues directly and write a
+   `<stem>.judgment.json` to `$WF/.judgment` matching that schema (sections,
+   paragraph_breaks, doubled_words, speaker_turns, non_speech). Use a
+   sub-agent per file when there are more than 3 files. (The `<stem>` is the
+   VTT filename without `.vtt`.)
 
 2. **Publish with judgment:**
    ```bash

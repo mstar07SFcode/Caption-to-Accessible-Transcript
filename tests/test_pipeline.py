@@ -235,6 +235,50 @@ Um, Alpha pays[unrecognized]for it.
           cleaned[0].text == f"Alpha pays {MARKER} for it.")
 
 
+def test_publish_never_adds_text():
+    """Publish Rule 3: the publish step has no way to add text to a transcript.
+
+    [sic], bracketed clarifications and dropped-word insertions were removed.
+    A model that emits those keys anyway — they were in the schema for months,
+    so a plausible hallucination — must have them ignored, not rendered.
+    """
+    cues = [P.Cue(1, "00:00:00.000", "00:00:04.000",
+                  "we need make sure the the section 117 rule applies")]
+    j = PublishJudgment.from_json({
+        "title": "T", "sections": [{"level": 2, "title": "S", "start_entry": 1}],
+        "paragraph_breaks": [1],
+        "doubled_words": [{"entry": 1, "find": "the the", "replace": "the"}],
+        # --- all three removed fields, supplied anyway ---
+        "sic": [{"entry": 1, "after": "we need make sure"}],
+        "clarifications": [{"entry": 1, "after": "section 117",
+                            "insert": "referring to §117(a)"}],
+        "dropped_word_insertions": [{"entry": 1, "after": "we need",
+                                     "insert": "to"}],
+    })
+    check("publish: removed fields dropped from judgment",
+          not any(hasattr(j, f) for f in
+                  ("sic", "clarifications", "dropped_word_insertions")))
+
+    html = build_html(cues, j, title="T")
+    check("publish: no [sic] rendered", "[sic]" not in html)
+    check("publish: no clarification rendered", "§117(a)" not in html)
+    check("publish: no dropped word rendered", "[to]" not in html)
+    check("publish: sentence left exactly as spoken",
+          "we need make sure" in html)
+    check("publish: doubled word still removed", "the the" not in html)
+
+    # The two legitimate bracket forms must still survive the publish step.
+    marker_cues = [P.Cue(1, "00:00:00.000", "00:00:04.000",
+                         f"Alpha pays {MARKER} for it.")]
+    mj = PublishJudgment.from_json({
+        "title": "T", "sections": [{"level": 2, "title": "S", "start_entry": 1}],
+        "paragraph_breaks": [1],
+        "non_speech": [],
+    })
+    check("publish: [unintelligible] passes through untouched",
+          MARKER in build_html(marker_cues, mj, title="T"))
+
+
 def test_title_transform():
     check("title: camel split",
           title_from_stem("MSAS-603_M2_AuditRisk") == "Transcript MSAS-603 M2 Audit Risk")
@@ -245,7 +289,7 @@ def test_title_transform():
 if __name__ == "__main__":
     for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
                test_vtt, test_flaglog, test_apply_judgment, test_publish,
-               test_title_transform]:
+               test_publish_never_adds_text, test_title_transform]:
         print(f"\n# {fn.__name__}")
         fn()
     print(f"\n{'ALL PASSED' if check.failed == 0 else str(check.failed) + ' FAILED'}")

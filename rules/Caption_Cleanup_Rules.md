@@ -36,7 +36,7 @@ Flag when:
 - The phrase is too garbled to form a confident reading
 
 ### Speaker grammatical error — Keep verbatim, no annotation
-When the auto-caption appears to have captured the spoken words accurately, but the speaker used grammatically incorrect phrasing, **preserve the text exactly as spoken**. Do not correct the grammar and do not add any annotation. Caption files are verbatim records — editorial notes like `[sic]` are applied during the Transcript Publish step, not here.
+When the auto-caption appears to have captured the spoken words accurately, but the speaker used grammatically incorrect phrasing, **preserve the text exactly as spoken**. Do not correct the grammar and do not add any annotation. Caption files are verbatim records — and so are the published transcripts: `[sic]` is not applied at the Transcript Publish step either (Publish Rule 3). A speaker's grammar is reproduced as spoken, unmarked, at every step.
 
 ---
 
@@ -222,7 +222,7 @@ recover the name. Anyone with the audio still can, so record the decision in
 | Correct speaker's factual claims | ✗ Never |
 | Fix speaker's grammar | ✗ Never |
 | Remove or paraphrase speaker's words | ✗ Never |
-| Use [sic] in caption files | ✗ Never |
+| Use [sic] in caption files — or in published transcripts | ✗ Never (Publish Rule 3) |
 
 ### Rule 5 — Do Not Alter Meaning
 - Preserve all technical terms, proper nouns, and legal citations exactly as spoken

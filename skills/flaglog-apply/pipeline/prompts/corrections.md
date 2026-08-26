@@ -125,7 +125,7 @@ RULES FOR PRODUCING CORRECTIONS AND FLAGS
    them. They are cleaned later at publish.
 
 9. Preserve speaker grammar errors verbatim. Do not fix subject-verb agreement
-   or word choice. Do not use [sic] here.
+   or word choice. Do not use [sic] — it is not used at any step.
 
 10. Never change entry numbers or meaning. Preserve technical terms, proper
     nouns, and citations exactly as spoken unless clearly misrecognized.

@@ -118,7 +118,7 @@ def test_publish_backend():
     response = ('{"sections": [{"level": 2, "title": "Overview", "start_entry": 1}], '
                 '"paragraph_breaks": [1, 2], '
                 '"doubled_words": [{"entry": 2, "find": "the the", "replace": "the"}], '
-                '"sic": []}')
+                '"speaker_turns": [], "non_speech": []}')
     install_fake_anthropic(captured, response)
 
     from pipeline.api_backend import APIBackend

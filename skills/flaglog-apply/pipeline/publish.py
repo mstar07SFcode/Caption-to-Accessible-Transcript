@@ -1,10 +1,13 @@
 """Render an accessible HTML transcript from cues + a PublishJudgment.
 
 Deterministic parts (title transform, meta block, duration, timecode placement,
-paragraph assembly, doubled-word removal, [sic]/clarification insertion,
-speaker-label and non-speech-audio markup) live here. The section structure,
-paragraph break points, speaker turns, non-speech cues, and clarifications
-all come from the judgment JSON (see rules/Transcript_Publish_Rules.md).
+paragraph assembly, doubled-word removal, speaker-label and non-speech-audio
+markup) live here. The section structure, paragraph break points, speaker
+turns, and non-speech cues all come from the judgment JSON (see
+rules/Transcript_Publish_Rules.md).
+
+The publish step cannot add words to a transcript: doubled-word removal is its
+only text edit. See _apply_publish_text_fixes.
 """
 
 from __future__ import annotations
@@ -103,30 +106,23 @@ def _mmss(vtt_timecode: str) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-# ---- Doubled-word + [sic] + clarification cleanup at publish -------------
+# ---- Doubled-word cleanup at publish --------------------------------------
 
 def _apply_publish_text_fixes(cue: Cue, judgment: PublishJudgment) -> str:
+    """Apply the only text edit the publish step may make: doubled-word removal.
+
+    The publish step deliberately has no way to add text to a transcript.
+    [sic] marks, bracketed clarifications, and dropped-word insertions were all
+    removed: each put words or editorial annotation on the page that the
+    speaker did not say, which the verbatim standard in
+    Caption_Cleanup_Rules.md forbids. A genuinely dropped or unrecoverable word
+    is handled upstream instead — flagged for human review at the cleanup step,
+    or already normalized to [unintelligible] under Rule 1d.
+    """
     text = cue.text
     for d in judgment.doubled_words:
         if d.get("entry") == cue.index and d.get("find") in text:
             text = text.replace(d["find"], d.get("replace", d["find"]), 1)
-    for s in judgment.sic:
-        if s.get("entry") == cue.index:
-            after = s.get("after", "")
-            if after and after in text:
-                text = text.replace(after, after + " [sic]", 1)
-    for c in judgment.clarifications:
-        if c.get("entry") == cue.index:
-            after = c.get("after", "")
-            insert = c.get("insert", "")
-            if after and insert and after in text:
-                text = text.replace(after, after + f" [{insert}]", 1)
-    for d in judgment.dropped_word_insertions:
-        if d.get("entry") == cue.index:
-            after = d.get("after", "")
-            insert = d.get("insert", "")
-            if after and insert and after in text:
-                text = text.replace(after, after + f" [{insert}]", 1)
     return text
 
 

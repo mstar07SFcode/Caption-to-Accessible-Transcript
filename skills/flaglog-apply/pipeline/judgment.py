@@ -31,11 +31,8 @@ Publish judgment:
     "sections": [{"level": 2, "title": "Introduction", "start_entry": 1}],
     "paragraph_breaks": [1, 7, 14],
     "doubled_words": [{"entry": 9, "find": "the the", "replace": "the"}],
-    "sic": [{"entry": 30, "after": "AI process"}],
     "speaker_turns": [{"entry": 5, "speaker": "Dr. Smith"}],
-    "non_speech": [{"entry": 12, "description": "Applause"}],
-    "clarifications": [{"entry": 20, "after": "section 117", "insert": "referring to §117(a)"}],
-    "dropped_word_insertions": [{"entry": 14, "after": "put it out", "insert": "in"}]
+    "non_speech": [{"entry": 12, "description": "Applause"}]
   }
 """
 
@@ -69,11 +66,8 @@ class PublishJudgment:
     sections: list[dict] = field(default_factory=list)
     paragraph_breaks: list[int] = field(default_factory=list)
     doubled_words: list[dict] = field(default_factory=list)
-    sic: list[dict] = field(default_factory=list)
     speaker_turns: list[dict] = field(default_factory=list)
     non_speech: list[dict] = field(default_factory=list)
-    clarifications: list[dict] = field(default_factory=list)
-    dropped_word_insertions: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, data: dict | str) -> "PublishJudgment":
@@ -83,11 +77,8 @@ class PublishJudgment:
                    sections=data.get("sections", []),
                    paragraph_breaks=data.get("paragraph_breaks", []),
                    doubled_words=data.get("doubled_words", []),
-                   sic=data.get("sic", []),
                    speaker_turns=data.get("speaker_turns", []),
-                   non_speech=data.get("non_speech", []),
-                   clarifications=data.get("clarifications", []),
-                   dropped_word_insertions=data.get("dropped_word_insertions", []))
+                   non_speech=data.get("non_speech", []))
 
 
 # ---- Backend protocol ------------------------------------------------------
