@@ -6,6 +6,41 @@ and which decisions are still open.
 
 ---
 
+## ⏸ In progress: launchers need a real macOS test before pushing
+
+**Paused:** 2026-08-25 · **Blocking:** `git push`
+
+Seven commits sit unpushed on `main`. The last two rewrote the `.command`
+launchers, which could not be exercised beyond a Linux shell — double-click
+behavior, Gatekeeper, and Finder's drag-and-drop path format are all untested
+on a real Mac.
+
+**Test on a scratch folder, not real captions** — step 3 can delete files.
+
+```bash
+mkdir -p ~/Desktop/captiontest/Raw_Captions
+cp <a few .srt files> ~/Desktop/captiontest/Raw_Captions/
+```
+
+1. Double-click `launchers/1_Clean_Captions.command`. If macOS blocks it,
+   right-click → Open → Open. At the prompt, **drag the folder in from Finder**
+   (this is what exercises the backslash-escaping fix — the project folder name
+   contains a space, which is exactly the case that used to fail).
+2. Double-click `2_Apply_FlagLog.command`. It must *not* re-ask for the folder —
+   just `Caption folder: …` and a `[Y/n]`. Confirms the remembered path.
+3. Double-click `3_Publish_Transcripts.command`, answer **n** to "Tidy up?".
+   Then confirm `Edited_Captions` and `Archived_Captions` still have contents.
+   This is the behavior change worth seeing directly: the old code emptied both.
+4. Run step 3 again, answer **y**. Both should now be empty while
+   `HTML_Transcripts` and `VTT_Files` keep their files.
+
+Likeliest failure points, in order: drag-and-drop path handling, Gatekeeper,
+and the `0_Setup_AI_Cleanup` venv path if AI mode is tested (only Basic mode
+was exercised; AI mode needs an API key). Basic mode covers every changed code
+path.
+
+---
+
 ## `_run_batch` has no timeout, no cancel, and no progress hook
 
 **Raised:** 2026-08-25 · **Status:** deferred, nothing implemented
