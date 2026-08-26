@@ -64,6 +64,31 @@ _is_valid_workdir() {
   [ -n "$1" ] && [ -d "$1" ]
 }
 
+# Normalizes a path a person typed or dragged in from Finder.
+#
+# Finder escapes spaces with backslashes ("/Users/me/Video\ Accessibility") and
+# appends a trailing space. `read -r` keeps both literally, so an unprocessed
+# drag of any folder whose name contains a space fails the -d test. Quoted
+# paths and a leading ~ are handled too.
+_clean_path() {
+  local p="$1"
+  # Trailing whitespace Finder adds on drop.
+  p="${p%"${p##*[![:space:]]}"}"
+  # Surrounding quotes, if the user pasted a quoted path.
+  p="${p%\"}"; p="${p#\"}"
+  p="${p%\'}"; p="${p#\'}"
+  # Leading ~ (read -r does not expand it).
+  case "$p" in "~"*) p="$HOME${p#\~}" ;; esac
+  # Unescape Finder's backslash escaping — but only if the literal path does
+  # not exist, so a folder genuinely containing a backslash still works.
+  if [ ! -d "$p" ]; then
+    local unescaped
+    unescaped="$(printf '%s' "$p" | sed 's/\\\(.\)/\1/g')"
+    [ -d "$unescaped" ] && p="$unescaped"
+  fi
+  printf '%s' "$p"
+}
+
 # Creates the five caption folders if they are missing.
 _ensure_subfolders() {
   local wf="$1" made=0
@@ -85,12 +110,7 @@ _prompt_for_workdir() {
   local input
   while true; do
     read -r -p "Folder: " input
-    # Strip surrounding quotes and the trailing space Finder adds on drag.
-    input="${input%\"}"; input="${input#\"}"
-    input="${input%\'}"; input="${input#\'}"
-    input="${input%"${input##*[![:space:]]}"}"
-    # Expand a leading ~ (read -r does not).
-    case "$input" in "~"*) input="$HOME${input#\~}" ;; esac
+    input="$(_clean_path "$input")"
     if _is_valid_workdir "$input"; then
       WORKDIR="$(cd "$input" && pwd)"
       return 0
