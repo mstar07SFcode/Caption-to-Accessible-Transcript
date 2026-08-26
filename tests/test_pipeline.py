@@ -374,6 +374,87 @@ def test_publish_never_adds_text():
           MARKER in build_html(marker_cues, mj, title="T"))
 
 
+def test_publish_deletion_is_opt_in():
+    """publish must destroy nothing unless --delete-working is passed.
+
+    Previously working files were deleted by default and Archived_Captions was
+    emptied unconditionally, as the FIRST action of the run — so a publish that
+    failed part-way left the user with neither transcripts nor originals.
+    """
+    import tempfile, shutil
+    from pipeline.batch import main as batch_main
+
+    def make_workdir(root: Path) -> dict[str, Path]:
+        dirs = {name: root / name for name in
+                ("Edited_Captions", "Archived_Captions",
+                 "VTT_Files", "HTML_Transcripts")}
+        for d in dirs.values():
+            d.mkdir(parents=True)
+        (dirs["Edited_Captions"] / "A.vtt").write_text(
+            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\nHello there.\n")
+        (dirs["Edited_Captions"] / "FlagLog_A.txt").write_text("log\n")
+        (dirs["Archived_Captions"] / "original.srt").write_text("orig\n")
+        return dirs
+
+    def run(dirs, *extra):
+        return batch_main(["publish",
+                           "--edited", str(dirs["Edited_Captions"]),
+                           "--vttout", str(dirs["VTT_Files"]),
+                           "--html", str(dirs["HTML_Transcripts"]),
+                           "--archive", str(dirs["Archived_Captions"]),
+                           *extra])
+
+    # --- default: nothing is deleted ---
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        dirs = make_workdir(tmp)
+        rc = run(dirs)
+        check("publish cli: default run succeeds", rc == 0)
+        check("publish cli: transcript written",
+              (dirs["HTML_Transcripts"] / "Transcript_A.html").exists())
+        check("publish cli: vtt archived", (dirs["VTT_Files"] / "A.vtt").exists())
+        # The decisive assertions.
+        check("publish cli: working vtt KEPT by default",
+              (dirs["Edited_Captions"] / "A.vtt").exists())
+        check("publish cli: flag log KEPT by default",
+              (dirs["Edited_Captions"] / "FlagLog_A.txt").exists())
+        check("publish cli: Archived_Captions NOT emptied by default",
+              (dirs["Archived_Captions"] / "original.srt").exists())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- --keep-working still accepted (back-compat no-op) ---
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        dirs = make_workdir(tmp)
+        check("publish cli: --keep-working still parses",
+              run(dirs, "--keep-working") == 0)
+        check("publish cli: --keep-working keeps files",
+              (dirs["Edited_Captions"] / "A.vtt").exists())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- --delete-working: cleanup happens, transcripts survive ---
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        dirs = make_workdir(tmp)
+        check("publish cli: --delete-working succeeds",
+              run(dirs, "--delete-working") == 0)
+        check("publish cli: working vtt deleted on request",
+              not (dirs["Edited_Captions"] / "A.vtt").exists())
+        check("publish cli: flag log deleted on request",
+              not (dirs["Edited_Captions"] / "FlagLog_A.txt").exists())
+        check("publish cli: Archived_Captions emptied on request",
+              not (dirs["Archived_Captions"] / "original.srt").exists())
+        # Outputs must survive the cleanup.
+        check("publish cli: transcript survives cleanup",
+              (dirs["HTML_Transcripts"] / "Transcript_A.html").exists())
+        check("publish cli: archived vtt survives cleanup",
+              (dirs["VTT_Files"] / "A.vtt").exists())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_title_transform():
     check("title: camel split",
           title_from_stem("MSAS-603_M2_AuditRisk") == "Transcript MSAS-603 M2 Audit Risk")
@@ -385,7 +466,8 @@ if __name__ == "__main__":
     for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
                test_vtt, test_flaglog, test_flaglog_scoping,
                test_apply_judgment, test_publish,
-               test_publish_never_adds_text, test_title_transform]:
+               test_publish_never_adds_text, test_publish_deletion_is_opt_in,
+               test_title_transform]:
         print(f"\n# {fn.__name__}")
         fn()
     print(f"\n{'ALL PASSED' if check.failed == 0 else str(check.failed) + ' FAILED'}")

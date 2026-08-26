@@ -53,6 +53,11 @@ Double-click launchers (macOS) are in `launchers/`. Run
 `anthropic`), then `1_Clean_Captions`, `2_Apply_FlagLog`, `3_Publish_Transcripts`.
 Basic mode needs only Python; AI mode prompts for an Anthropic API key.
 
+On first run a launcher asks where your caption folders are and creates the
+five subfolders if they are missing. The answer is remembered in
+`launchers/.caption_workflow` — delete that file to be asked again. Keep the
+launchers inside the project folder, next to `pipeline/`.
+
 CLI directly:
 
 ```bash
@@ -61,12 +66,18 @@ python3 -m pipeline.batch clean   --raw Raw_Captions --out Edited_Captions \
         --archive Archived_Captions --course RHET-103 --speaker "Jane Doe" [--backend api] [--batch]
 python3 -m pipeline.batch apply-flaglog --edited Edited_Captions
 python3 -m pipeline.batch publish --edited Edited_Captions --vttout VTT_Files \
-        --html HTML_Transcripts --archive Archived_Captions [--backend api] [--batch]
+        --html HTML_Transcripts --archive Archived_Captions [--backend api] [--batch] \
+        [--delete-working]
 ```
 
 `--backend api` uses the Anthropic API (needs `ANTHROPIC_API_KEY`); `--batch`
 submits all files as one Message Batch (50% cheaper). Prompt caching is always
 on. See `tests/` for the validated behavior.
+
+`publish` deletes nothing by default. `--delete-working` empties
+`Archived_Captions` and removes the working `.vtt` files and flag logs from
+`Edited_Captions`, after the transcripts are safely written. (`--keep-working`
+is still accepted and does nothing — keeping is now the default.)
 
 ## Editing the rules
 

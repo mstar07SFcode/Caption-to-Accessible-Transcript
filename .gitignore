@@ -19,6 +19,9 @@ venv/
 # OS
 .DS_Store
 
+# Launcher's remembered working-folder path — local to each machine
+launchers/.caption_workflow
+
 # Secrets — never commit API keys
 .env
 *.key

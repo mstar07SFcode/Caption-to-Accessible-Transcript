@@ -6,22 +6,19 @@
 #  Applies the remaining corrections to the matching .vtt files.
 # ============================================================
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE="$DIR/usf-caption-pipeline"
+source "$(cd "$(dirname "$0")" && pwd)/_common.sh"
 
-PY="$(command -v python3)"
-if [ -z "$PY" ]; then
-  echo "ERROR: Python 3 is not installed."
-  echo "Install it from https://www.python.org/downloads/ and try again."
-  echo
-  read -n1 -r -p "Press any key to close..."
-  exit 1
-fi
+find_python
+find_pipeline
 
 echo "============================================"
 echo "  STEP 1b — Apply Flag Log Corrections"
 echo "============================================"
 echo
+
+get_workdir
+DIR="$WORKDIR"
+
 echo "This applies the corrections left in the flag logs in:"
 echo "  $DIR/Edited_Captions"
 echo
@@ -33,7 +30,7 @@ case "$OK" in
 esac
 echo
 
-cd "$PIPELINE" || { echo "ERROR: cannot find $PIPELINE"; read -n1 -r; exit 1; }
+cd "$PIPELINE" || exit 1
 "$PY" -m pipeline.batch apply-flaglog --edited "$DIR/Edited_Captions"
 
 echo

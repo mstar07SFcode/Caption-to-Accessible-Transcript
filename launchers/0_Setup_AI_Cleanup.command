@@ -3,22 +3,15 @@
 #  ONE-TIME SETUP — AI Cleanup
 #  Double-click once to enable the AI cleanup option in the
 #  Step 1 and Step 3 launchers. Creates a small private Python
-#  environment inside usf-caption-pipeline and installs the
+#  environment next to the pipeline code and installs the
 #  Anthropic library there. Safe to run again any time.
 # ============================================================
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE="$DIR/usf-caption-pipeline"
-VENV="$PIPELINE/.venv"
+source "$(cd "$(dirname "$0")" && pwd)/_common.sh"
 
-PY="$(command -v python3)"
-if [ -z "$PY" ]; then
-  echo "ERROR: Python 3 is not installed."
-  echo "Install it from https://www.python.org/downloads/ and run this again."
-  echo
-  read -n1 -r -p "Press any key to close..."
-  exit 1
-fi
+find_python
+find_pipeline
+VENV="$PIPELINE/.venv"
 
 echo "============================================"
 echo "  Setting up AI cleanup (one time)"

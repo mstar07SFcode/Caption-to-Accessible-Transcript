@@ -6,24 +6,19 @@
 #  Edited_Captions, then archives the originals.
 # ============================================================
 
-# Folder this script lives in (the Video Accessibility folder).
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE="$DIR/usf-caption-pipeline"
+source "$(cd "$(dirname "$0")" && pwd)/_common.sh"
 
-# Find Python 3.
-PY="$(command -v python3)"
-if [ -z "$PY" ]; then
-  echo "ERROR: Python 3 is not installed."
-  echo "Install it from https://www.python.org/downloads/ and try again."
-  echo
-  read -n1 -r -p "Press any key to close..."
-  exit 1
-fi
+find_python
+find_pipeline
 
 echo "============================================"
 echo "  STEP 1 — Clean Captions"
 echo "============================================"
 echo
+
+get_workdir
+DIR="$WORKDIR"
+
 echo "Make sure your .srt / .txt caption files are in:"
 echo "  $DIR/Raw_Captions"
 echo
@@ -72,11 +67,11 @@ else
 fi
 echo
 
-cd "$PIPELINE" || { echo "ERROR: cannot find $PIPELINE"; read -n1 -r; exit 1; }
+cd "$PIPELINE" || exit 1
 "$RUNPY" -m pipeline.batch clean "${ARGS[@]}"
 
 echo
-echo "Done. Cleaned files and flag logs are in: Edited_Captions"
+echo "Done. Cleaned files and flag logs are in: $DIR/Edited_Captions"
 echo "Next: review the FlagLog_*.txt files, then run Step 2."
 echo
 read -n1 -r -p "Press any key to close..."

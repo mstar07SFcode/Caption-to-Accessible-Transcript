@@ -3,32 +3,25 @@
 #  STEP 2 — Publish HTML Transcripts
 #  Double-click to convert the cleaned .vtt files into
 #  accessible HTML transcripts.
-#  NOTE: this empties Archived_Captions at the start, archives
-#  Panopto-ready .vtt files to VTT_Files, writes HTML to
-#  HTML_Transcripts, and clears the Edited_Captions working files.
+#  Nothing is deleted unless you ask for it at the prompt.
 # ============================================================
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIPELINE="$DIR/usf-caption-pipeline"
+source "$(cd "$(dirname "$0")" && pwd)/_common.sh"
 
-PY="$(command -v python3)"
-if [ -z "$PY" ]; then
-  echo "ERROR: Python 3 is not installed."
-  echo "Install it from https://www.python.org/downloads/ and try again."
-  echo
-  read -n1 -r -p "Press any key to close..."
-  exit 1
-fi
+find_python
+find_pipeline
 
 echo "============================================"
 echo "  STEP 2 — Publish HTML Transcripts"
 echo "============================================"
 echo
+
+get_workdir
+DIR="$WORKDIR"
+
 echo "This will:"
-echo "  - empty Archived_Captions (originals no longer needed)"
 echo "  - save HTML transcripts to HTML_Transcripts"
 echo "  - archive clean .vtt files to VTT_Files"
-echo "  - clear the working files in Edited_Captions"
 echo
 read -r -p "Proceed? [y/N] " OK
 case "$OK" in
@@ -37,8 +30,21 @@ case "$OK" in
 esac
 echo
 
-VENV="$PIPELINE/.venv"
 ARGS=(--edited "$DIR/Edited_Captions" --vttout "$DIR/VTT_Files" --html "$DIR/HTML_Transcripts" --archive "$DIR/Archived_Captions")
+
+# Tidy-up is opt-in and runs only after the transcripts are safely written.
+echo "Afterward, tidy up the working files?"
+echo "  This empties Archived_Captions and deletes the working .vtt files"
+echo "  and flag logs in Edited_Captions. Your HTML transcripts and VTT_Files"
+echo "  are kept either way."
+read -r -p "Tidy up? [y/N] " TIDY
+case "$TIDY" in
+  y|Y|yes|YES) ARGS+=(--delete-working); echo "Will tidy up after publishing." ;;
+  *) echo "Keeping all working files." ;;
+esac
+echo
+
+VENV="$PIPELINE/.venv"
 echo "Transcript structure:"
 echo "  [1] Basic — one section, simple paragraphs (fast, free, no AI)"
 echo "  [2] AI    — meaningful headings and paragraph breaks (needs setup + API key)"
@@ -66,11 +72,11 @@ else
 fi
 echo
 
-cd "$PIPELINE" || { echo "ERROR: cannot find $PIPELINE"; read -n1 -r; exit 1; }
+cd "$PIPELINE" || exit 1
 "$RUNPY" -m pipeline.batch publish "${ARGS[@]}"
 
 echo
-echo "Done. Accessible transcripts are in: HTML_Transcripts"
-echo "Panopto-ready caption files are in:  VTT_Files"
+echo "Done. Accessible transcripts are in: $DIR/HTML_Transcripts"
+echo "Panopto-ready caption files are in:  $DIR/VTT_Files"
 echo
 read -n1 -r -p "Press any key to close..."

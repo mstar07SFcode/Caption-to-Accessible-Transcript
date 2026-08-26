@@ -205,11 +205,6 @@ def cmd_publish(args) -> int:
     backend = make_backend(args)
     jdir = Path(args.judgment_dir) if args.judgment_dir else None
 
-    # Step 1: empty Archived_Captions.
-    removed = F.empty_directory(archive)
-    if removed:
-        print(f"Emptied Archived_Captions ({len(removed)} item(s)).")
-
     vtts = sorted(p for p in edited.glob("*.vtt"))
     if not vtts:
         print("No *.vtt files to publish.")
@@ -253,26 +248,34 @@ def cmd_publish(args) -> int:
         (vttout / v.name).write_text(
             V.strip_header(v.read_text(encoding="utf-8")), encoding="utf-8")
 
-    # Delete flag logs and working VTTs from edited.
-    # PermissionError is skipped gracefully (read-only mounts in some environments).
-    if not args.keep_working:
-        for p in edited.glob("FlagLog_*.txt"):
-            try:
-                p.unlink()
-            except PermissionError:
-                pass
-        for p in edited.glob("Applied_FlagLog_*.txt"):
-            try:
-                p.unlink()
-            except PermissionError:
-                pass
-        for v in vtts:
-            try:
-                v.unlink()
-            except PermissionError:
-                pass
-
     print(f"Published {len(vtts)} transcript(s) to {htmlout}")
+
+    # Destructive cleanup is opt-in. It runs only AFTER the HTML and archived
+    # VTTs above are safely written, so a failed run can never leave the user
+    # with neither transcripts nor originals.
+    if getattr(args, "delete_working", False):
+        failed: list[str] = []
+        removed = F.empty_directory(archive)
+        if removed:
+            print(f"Emptied Archived_Captions ({len(removed)} item(s)).")
+        targets = (list(edited.glob("FlagLog_*.txt"))
+                   + list(edited.glob("Applied_FlagLog_*.txt"))
+                   + list(vtts))
+        deleted = 0
+        for p in targets:
+            try:
+                p.unlink()
+                deleted += 1
+            except (PermissionError, OSError) as e:
+                failed.append(f"{p.name} ({e.__class__.__name__})")
+        print(f"Deleted {deleted} working file(s) from {edited}")
+        # Report rather than swallow: on a restricted mount these all fail, and
+        # silently printing success left users believing the folder was cleared.
+        if failed:
+            print(f"WARNING: could not delete {len(failed)} file(s) — "
+                  f"they are still in {edited}:")
+            for name in failed:
+                print(f"    {name}")
     return 0
 
 
@@ -316,7 +319,14 @@ def main(argv=None) -> int:
     p.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")
     p.add_argument("--judgment-dir", default=None)
-    p.add_argument("--keep-working", action="store_true")
+    p.add_argument("--delete-working", action="store_true",
+                   help="after publishing, empty Archived_Captions and delete "
+                        "the working VTTs and flag logs. Off by default: "
+                        "publish destroys nothing unless asked.")
+    # Accepted and ignored: keeping working files is now the default. Kept so
+    # existing scripts and habits do not break with 'unrecognized argument'.
+    p.add_argument("--keep-working", action="store_true",
+                   help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_publish)
 
     args = ap.parse_args(argv)

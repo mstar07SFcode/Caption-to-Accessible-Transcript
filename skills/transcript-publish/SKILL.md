@@ -6,8 +6,8 @@ description: Convert cleaned VTT caption files into accessible WCAG 2.1 AA HTML 
 # Transcript Publish
 
 Step 2 (final). Converts each cleaned `*.vtt` in `Edited_Captions` into an
-accessible HTML transcript, archives a standards-compliant VTT, empties
-`Archived_Captions`, and clears the working files.
+accessible HTML transcript and archives a standards-compliant VTT to
+`VTT_Files`. Nothing is deleted unless the user asks to tidy up.
 
 Deterministic parts (timecodes, duration, HTML scaffolding, header strip) are
 handled by the pipeline. Section headings, paragraph structure, speaker
@@ -54,10 +54,15 @@ Let `WF` be the user's working folder.
 3. **Basic alternative (no AI):** run the same command without `--judgment-dir`;
    the pipeline emits one section and simple paragraphs.
 
-The pipeline empties `Archived_Captions` first, writes HTML to
-`HTML_Transcripts`, archives header-stripped VTTs to `VTT_Files`, and clears the
-working files in `Edited_Captions`. Afterward, delete the `$WF/.judgment`
-scratch folder.
+The pipeline writes HTML to `HTML_Transcripts` and archives header-stripped
+VTTs to `VTT_Files`. **It deletes nothing by default.** Afterward, delete the
+`$WF/.judgment` scratch folder.
+
+To also empty `Archived_Captions` and clear the working `.vtt` files and flag
+logs from `Edited_Captions`, add `--delete-working`. Only do so when the user
+has asked to tidy up — never on your own initiative, and never on a run where
+anything went wrong. The cleanup runs after the transcripts are written, and
+reports any file it could not delete rather than reporting success.
 
 ## Output Filename Naming Rules
 
