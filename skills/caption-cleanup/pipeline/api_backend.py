@@ -20,7 +20,7 @@ from pathlib import Path
 from .judgment import CleanupJudgment, PublishJudgment, cues_as_prompt_text
 from .parse import Cue
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-5"
 _PKG = Path(__file__).resolve().parent
 _CLEANUP_RULES = _PKG.parent / "rules" / "Caption_Cleanup_Rules.md"
 _PUBLISH_RULES = _PKG.parent / "rules" / "Transcript_Publish_Rules.md"

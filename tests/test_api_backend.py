@@ -87,13 +87,13 @@ def test_cleanup_backend():
     from pipeline.api_backend import APIBackend
     from pipeline.apply import apply_cleanup
 
-    backend = APIBackend(api_key="sk-test", model="claude-sonnet-4-6")
+    backend = APIBackend(api_key="sk-test", model="claude-sonnet-5")
     cues = [Cue(1, "00:00:00.000", "00:00:02.000", "Intro."),
             Cue(2, "00:00:02.000", "00:00:05.000", "The balance you date matters."),
             Cue(3, "00:00:05.000", "00:00:07.000", "garbled line")]
     judgment = backend.cleanup(cues, {})
 
-    check("api: model passed through", captured.get("model") == "claude-sonnet-4-6")
+    check("api: model passed through", captured.get("model") == "claude-sonnet-5")
     # system is now a list of cacheable content blocks.
     sysblock = captured["system"][0]
     check("api: system is cacheable block",

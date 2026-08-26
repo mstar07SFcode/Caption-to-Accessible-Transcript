@@ -6,7 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pipeline import parse as P
-from pipeline.clean import remove_fillers, clean_cues
+from pipeline.clean import (remove_fillers, clean_cues,
+                            normalize_captioner_markers, MARKER)
 from pipeline import naming
 from pipeline import vtt as V
 from pipeline.flaglog import (write_flaglog, parse_flaglog, apply_flaglog,
@@ -178,6 +179,62 @@ def test_publish():
     check("publish: WCAG max-width", "75ch" in html)
 
 
+def test_captioner_markers():
+    """Rule 1d: normalize the captioner's own 'could not transcribe' markers.
+
+    The first four cases are exactly the rows of the Rule 1d table in
+    rules/Caption_Cleanup_Rules.md — if that table changes, these change.
+    """
+    n = normalize_captioner_markers
+
+    # --- the four documented cases, verbatim from the rules table ---
+    check("marker: straight swap",
+          n("Alpha pays [unrecognized] for a 10% interest")
+          == "Alpha pays [unintelligible] for a 10% interest")
+    check("marker: missing spaces repaired",
+          n("Alpha pays[unrecognized]for a 10% interest")
+          == "Alpha pays [unintelligible] for a 10% interest")
+    check("marker: bare possessive repaired",
+          n("[unrecognized]s 2027 net income")
+          == "[unintelligible]'s 2027 net income")
+    check("marker: spacing repaired, terminal punctuation kept",
+          n("included in current net income[unrecognized].")
+          == "included in current net income [unintelligible].")
+
+    # --- every engine variant maps to the one project marker ---
+    for variant in ["[unrecognized]", "[unrecognised]", "[inaudible]",
+                    "[indiscernible]", "[unclear]", "[unintelligible]",
+                    "[?]", "[???]", "[ unrecognized ]", "[UNRECOGNIZED]"]:
+        check(f"marker: variant {variant} -> {MARKER}",
+              n(f"the {variant} figure") == f"the {MARKER} figure")
+
+    # --- multiple markers in one cue are all normalized ---
+    check("marker: two in one cue",
+          n("[inaudible] and [?] too")
+          == f"{MARKER} and {MARKER} too")
+
+    # --- idempotent: re-running must not double-space or double-possessive ---
+    once = n("Alpha pays[unrecognized]for [unrecognized]s share.")
+    check("marker: idempotent", n(once) == once)
+    check("marker: idempotent result correct",
+          once == f"Alpha pays {MARKER} for {MARKER}'s share.")
+
+    # --- no marker present: text must pass through untouched ---
+    for clean_text in ["nothing here at all",
+                       "a 10% interest in the [bracketed] aside",
+                       "she said it was unrecognized by the board"]:
+        check(f"marker: untouched {clean_text[:24]!r}", n(clean_text) == clean_text)
+
+    # --- runs through the deterministic clean step, not just in isolation ---
+    cues = P.parse_srt("""1
+00:00:01,000 --> 00:00:03,000
+Um, Alpha pays[unrecognized]for it.
+""")
+    cleaned = clean_cues(cues)
+    check("marker: applied by clean_cues",
+          cleaned[0].text == f"Alpha pays {MARKER} for it.")
+
+
 def test_title_transform():
     check("title: camel split",
           title_from_stem("MSAS-603_M2_AuditRisk") == "Transcript MSAS-603 M2 Audit Risk")
@@ -186,8 +243,9 @@ def test_title_transform():
 
 
 if __name__ == "__main__":
-    for fn in [test_parse, test_clean, test_naming, test_vtt, test_flaglog,
-               test_apply_judgment, test_publish, test_title_transform]:
+    for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
+               test_vtt, test_flaglog, test_apply_judgment, test_publish,
+               test_title_transform]:
         print(f"\n# {fn.__name__}")
         fn()
     print(f"\n{'ALL PASSED' if check.failed == 0 else str(check.failed) + ' FAILED'}")

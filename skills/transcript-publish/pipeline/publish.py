@@ -79,10 +79,19 @@ def title_from_stem(stem: str) -> str:
 def _split_camel(s: str) -> str:
     # Insert spaces between camelCase boundaries, but keep tokens like MSAS-603,
     # M2, Ch20 intact.
+    #
+    # Two boundary rules, applied in sequence:
+    #   1. lower/digit -> upper   e.g. "toolGoogle"   -> "tool Google"
+    #   2. upper -> upper+lower   e.g. "LMPart"        -> "LM Part"
+    # Rule 2 catches the acronym/product-name case (NotebookLM, GPT, AI, ...)
+    # immediately followed by another capitalized word, which rule 1 alone
+    # cannot see because both sides of that boundary are uppercase letters.
     def space_word(word: str) -> str:
         if re.fullmatch(r"[A-Z0-9.\-]+", word):  # all-caps/code token
             return word
-        return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", word)
+        word = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", word)
+        word = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", word)
+        return word
     return " ".join(space_word(w) for w in s.split(" "))
 
 

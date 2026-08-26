@@ -291,7 +291,7 @@ def main(argv=None) -> int:
     c.add_argument("--backend", choices=["stub", "api"], default="stub")
     c.add_argument("--model", default=None)
     c.add_argument("--batch", action="store_true",
-                   help="submit all files as one Message Batch (50% cheaper, async)")
+                   help="submit all files as one Message Batch (50%% cheaper, async)")
     c.add_argument("--judgment-dir", default=None)
     c.add_argument("--emit-prompts", default=None)
     c.add_argument("--no-archive", action="store_true")
@@ -314,7 +314,7 @@ def main(argv=None) -> int:
     p.add_argument("--backend", choices=["stub", "api"], default="stub")
     p.add_argument("--model", default=None)
     p.add_argument("--batch", action="store_true",
-                   help="submit all files as one Message Batch (50% cheaper, async)")
+                   help="submit all files as one Message Batch (50%% cheaper, async)")
     p.add_argument("--judgment-dir", default=None)
     p.add_argument("--keep-working", action="store_true")
     p.set_defaults(func=cmd_publish)

@@ -9,7 +9,7 @@ This file defines all editing rules for the Caption Cleanup workflow. It is refe
 These captions follow a **verbatim standard**: the goal is to preserve exactly what the speaker said. All edits must serve the purpose of accurately representing the spoken words — not improving the speaker's grammar or style.
 
 - Speaker grammar errors, awkward phrasing, and non-standard constructions are **preserved as spoken** — do not correct, rephrase, reorder, or editorially annotate them in the caption file
-- **Never insert a word that was not spoken** — not even in square brackets, and not even to make a sentence grammatical or complete. But *do* restore a word that was clearly spoken and misrecognized (e.g. "we'll" mangled into "will"): that is a recognition correction, not an insertion. If a truly dropped word makes the meaning unclear, flag it for human review; do not supply it. (See Rule 3.)
+- **Never insert a word that was not spoken** — not even in square brackets, and not even to make a sentence grammatical or complete. But *do* restore a word that was clearly spoken and misrecognized (e.g. "we'll" mangled into "will"): that is a recognition correction, not an insertion. If a truly dropped word makes the meaning unclear, flag it for human review; do not supply it. (See Rule 3.) The single exception is an indeterminate proper noun, which is replaced with `[unintelligible]` under Rule 3a.
 - Auto-caption doubled words (e.g., *"the the"*, *"encode encode"*) are **preserved verbatim** in the caption file — do not remove them here; they are cleaned during the Transcript Publish step
 - The file header declares: *"Auto-generated transcript. Edits have been applied for clarity."* — this covers only recognition corrections and filler removal, not editorial changes to the speaker's language
 
@@ -93,6 +93,37 @@ Only one punctuation mark may appear at a time. This is handled automatically by
 
 **Do not collapse intentional ellipses** (`...`) — those are a single punctuation unit and should be left alone.
 
+### Rule 1d — Normalize the Captioner's Own "Could Not Transcribe" Markers
+
+Auto-captioners emit their own marker where the recognizer failed on a word —
+Panopto writes `[unrecognized]`; other engines write `[inaudible]`,
+`[indiscernible]`, `[unclear]` or `[?]`. These arrive **in the source file**;
+they are not something this workflow adds.
+
+Normalize every such marker to `[unintelligible]`, the project's single marker
+(Rule 3a). The captioner's marker asserts exactly what ours does — that no word
+could be recovered — so passing it through unchanged would put two different
+labels for one condition in front of students.
+
+Handled automatically by the pipeline's deterministic clean step, before cues
+are sent to the AI for judgment. The AI therefore never sees `[unrecognized]`
+and must not flag, correct, or reinstate it. Documented here for reference.
+
+| Source | Normalized | Note |
+|---|---|---|
+| `Alpha pays [unrecognized] for a 10% interest` | `Alpha pays [unintelligible] for a 10% interest` | Straight swap |
+| `Alpha pays[unrecognized]for a 10% interest` | `Alpha pays [unintelligible] for a 10% interest` | Missing spaces repaired |
+| `[unrecognized]s 2027 net income` | `[unintelligible]'s 2027 net income` | Bare possessive repaired |
+| `included in current net income[unrecognized].` | `included in current net income [unintelligible].` | Spacing repaired, terminal punctuation kept |
+
+The two repairs matter for accessibility: without them a screen reader voices
+`pays[unrecognized]for` as a single run-together word.
+
+**This rule does not recover the missing word.** The marker records a gap the
+recognizer left; determining what was actually said needs the audio. Do not
+replace `[unintelligible]` with a guess, and do not flag it for review — the
+marker *is* the resolution. See Rule 3a.
+
 ### Rule 2 — Remove Vocal Hesitations and Fillers
 
 Delete the following without replacement:
@@ -127,6 +158,51 @@ Delete the following without replacement:
 
 Note the difference between rows 1–3 and rows 4–5: in the first three there is no token that was misheard — adding a word is pure insertion. In the last two, an actual spoken word ("we'll") was mangled into "will"/"or", so restoring it is a recognition correction, not an insertion.
 
+### Rule 3a — Indeterminate Proper Nouns (`[unintelligible]`)
+
+The one permitted bracketed insertion in a caption file. A proper noun — a
+person, company, or place name — is sometimes rendered so inconsistently by the
+auto-captioner that no correct form can be established. Leaving one of the
+garbled variants in place asserts a name the speaker may never have said, which
+is worse than admitting the gap. In that case only, replace the name with
+`[unintelligible]`.
+
+**All four conditions must hold. If any fails, flag instead.**
+
+1. **It is a proper noun.** Never use this marker for ordinary words, verbs,
+   figures, or worksheet entry labels — those follow Rules 3, 5 and 6.
+2. **It is genuinely indeterminate.** The transcript offers no ground truth:
+   the renderings conflict with no majority, or two files disagree about the
+   same entity. If the correct name appears anywhere in the same file, that is a
+   Rule 3 misrecognition — **correct it, do not blank it.**
+3. **The name is the only defect in that entry.** If the entry also carries an
+   unresolved figure, a dropped word, or a broken clause, flag the entry
+   instead — blanking the name would conceal the second defect from the
+   reviewer.
+4. **Every occurrence in the file is replaced.** Marking some occurrences and
+   leaving others makes one entity read as several. Apply the marker across the
+   whole file, including entries that were never flagged.
+
+**Form:** exactly `[unintelligible]`, lowercase, in place of the name only.
+Keep the surrounding grammar, including any possessive: `Sorkin's ending
+inventory` → `[unintelligible]'s ending inventory`.
+
+**Effect on the flag log:** this resolves the entry — do not also flag it. It
+differs from every other rule in this file, which defer to a human reviewer;
+here the judgment is that no reviewer working from the transcript alone could
+recover the name. Anyone with the audio still can, so record the decision in
+**Corrections Applied** with the conflicting variants named in the reason.
+
+| Source (as captioned) | Evidence | Action |
+|---|---|---|
+| `pair`, `Pairs`, `paired` — with `Parrot` elsewhere in the file | Correct form present | ✓ Correct to `Parrot` (Rule 3) |
+| `ARM codes`, `Aamco` — with `Armco` elsewhere in the file | Correct form present | ✓ Correct to `Armco` (Rule 3) |
+| `Zircon` ×4, `Durkin`, `Perkins`, `Sorkin` in one file | Four variants, no ground truth | ✓ `[unintelligible]` at all 7 |
+| `Steinbach` ×4 vs `Steinberg` ×4 | Even split, no tiebreak | ✓ `[unintelligible]` throughout |
+| Lecture A says `Codigo SaaS`, lecture B says `Cardano S.A.` | Files disagree | ✓ `[unintelligible]` in both |
+| `Done. So the machine for $59,100` | Name uncertain **and** verb dropped | ✗ Flag — condition 3 fails |
+| A garbled dollar figure | Not a proper noun | ✗ Flag — condition 1 fails |
+
 ### Rule 4 — Words: What May and May Not Change
 
 | Action | Rule |
@@ -139,6 +215,9 @@ Note the difference between rows 1–3 and rows 4–5: in the first three there 
 | Preserve auto-caption doubled words verbatim | ✓ Always — cleaned at Transcript Publish step |
 | Restore a misrecognized word at ≥ 90% (e.g. "will" → "we'll") | ✓ Apply + log in Corrections Applied (Rule 3) |
 | **Insert a word the speaker did not say — or any bracketed insertion** | ✗ **Never** (Rule 3) — flag instead |
+| Replace an indeterminate proper noun with `[unintelligible]` | ✓ Only when all four Rule 3a conditions hold |
+| Normalize the captioner's own `[unrecognized]` to `[unintelligible]` | ✓ Automatic (Rule 1d) — pipeline, not judgment |
+| Guess the word behind an `[unintelligible]` marker, or flag it | ✗ Never (Rules 1d, 3a) — the marker is the resolution |
 | Add, substitute, or reorder content words | ✗ Never |
 | Correct speaker's factual claims | ✗ Never |
 | Fix speaker's grammar | ✗ Never |

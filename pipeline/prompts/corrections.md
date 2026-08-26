@@ -68,6 +68,29 @@ RULES FOR PRODUCING CORRECTIONS AND FLAGS
    certain the speaker said the contraction. If there is no wrong token to fix
    and you would merely be supplying a missing word, do NOT — flag instead.
 
+3a. INDETERMINATE PROPER NOUNS — the one permitted bracketed insertion. If a
+   person/company/place name is rendered so inconsistently that no correct form
+   can be established, emit a correction replacing the name with
+   `[unintelligible]`. ALL FOUR conditions must hold, else flag:
+   (a) it is a proper noun — never a figure, verb, ordinary word, or worksheet
+       entry label;
+   (b) it is genuinely indeterminate — variants conflict with no majority, or
+       two files disagree. If the correct name appears ANYWHERE in this file,
+       correct it under Rule 3 instead — do not blank a recoverable name;
+   (c) the name is the ONLY defect in that entry — if a figure, dropped word or
+       broken clause is also unresolved there, flag the entry instead;
+   (d) you emit a correction for EVERY occurrence in the file, including cues
+       you would not otherwise have flagged.
+   Form: exactly `[unintelligible]`, replacing the name only, preserving
+   surrounding grammar and possessives ("Sorkin's" -> "[unintelligible]'s").
+   Name the conflicting variants in `reason`. Do NOT also add a flag for that
+   entry — this resolves it.
+
+3b. `[unintelligible]` markers already present in a cue were normalized from the
+   auto-captioner's own marker by the deterministic clean step (Rule 1d). Leave
+   them exactly as they are: do NOT guess the missing word, do NOT flag them,
+   do NOT remove them. The marker is already the resolution.
+
 4. Sentence continuation across entries: express as corrections. If entry N's
    sentence continues into entry N+1, emit a correction on entry N to remove the
    incorrect terminal period (e.g. find "groups." replace "groups,") AND a
