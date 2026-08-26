@@ -70,10 +70,22 @@ on. See `tests/` for the validated behavior.
 
 ## Editing the rules
 
-All editing behavior lives in `rules/Caption_Cleanup_Rules.md` and the prompts
-in `pipeline/prompts/`. These are the single source of truth for both the
-in-Claude path and the API path. If you maintain a canonical copy elsewhere,
-keep this repo in sync from it before pushing (see `tools/sync_from_local.sh`).
+All editing behavior lives in `rules/Caption_Cleanup_Rules.md`,
+`rules/Transcript_Publish_Rules.md`, and the prompts in `pipeline/prompts/`.
+These are the single source of truth for both the in-Claude path and the API
+path — edit them here, at the repo root.
+
+Cowork mounts only each skill's own `skills/<name>/` subtree at runtime, so
+every skill folder carries its own copy of `rules/`, `pipeline/` and
+`templates/`. After editing any of those three at the root, fan the changes out
+before committing:
+
+```bash
+bash tools/sync_to_skills.sh
+```
+
+`skills/*/SKILL.md` is deliberately not synced — edit those in place. See
+`UPDATING_THE_PLUGIN.md` for the full release process.
 
 ## Privacy
 
