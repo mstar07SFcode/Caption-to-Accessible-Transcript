@@ -267,9 +267,7 @@ def cmd_publish(args) -> int:
             title = title_map.get(j["stem"], title_from_stem(j["stem"]))
             docx_doc = build_docx(doc.cues, judgment, speaker=speaker,
                                   course=course, title=title)
-            out_name = naming.safe_filename(
-                f"Transcript_{naming.camelize_title(title)}", "docx")
-            docx_doc.save(str(htmlout / out_name))
+            docx_doc.save(str(htmlout / naming.transcript_docx_name(title)))
         else:
             html_text = build_html(doc.cues, judgment, speaker=speaker,
                                    course=course, title=title_from_stem(j["stem"]))

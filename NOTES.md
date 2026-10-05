@@ -6,19 +6,37 @@ and which decisions are still open.
 
 ---
 
-## docx publish landed CLI-only, and its title helper is unwired
+## docx publish: `humanize_title()` is unwired, and nothing is tested
 
-**Raised:** 2026-10-04 · **Status:** feature shipped, three gaps open
-**Fixed 2026-10-04:** the undeclared `python-docx` dependency — `requirements.txt`
-now declares it, and `cmd_publish` checks for it before the judgment phase
-instead of crashing in Phase 3 with a paid batch already spent.
+**Raised:** 2026-10-04 · **Status:** feature shipped and wired into Step 3,
+two gaps open
 **Location:** `pipeline/docx_publish.py`, `cmd_publish` in `pipeline/batch.py`,
 `pipeline/naming.py`
 
-`publish --format docx` works and is pushed. What follows is what did *not*
-land with it, in severity order.
+**Fixed 2026-10-04:**
+
+- The undeclared `python-docx` dependency. `requirements.txt` now declares it,
+  and `cmd_publish` checks for it before the judgment phase instead of
+  crashing in Phase 3 with a paid batch already spent.
+- Launcher access. `3_Publish_Transcripts.command` now offers
+  `[1] Web page (.html) / [2] Word (.docx)` and writes Word output to its own
+  `Word_Transcripts` folder. The interpreter question that was open here
+  answered itself: the prompt sits *after* the Basic/AI choice, so `$RUNPY` is
+  already known, and the launcher offers to `pip install python-docx` into
+  that exact interpreter — declining falls back to HTML. Nothing was added to
+  `0_Setup_AI_Cleanup.command`, which has no use for the library.
+- Doubled filename prefix. `Transcript_Transcript…docx` — `title_from_stem()`
+  already begins with "Transcript ". Naming now lives in
+  `naming.transcript_docx_name()`, beside its HTML sibling.
+
+`--title-map` and `--speaker-map` remain CLI-only, deliberately: they are
+batch-level JSON files with no sensible double-click prompt.
 
 ### 1. `humanize_title()` is dead code
+
+**Deliberately deferred 2026-10-04** — the titles `title_from_stem()` produces
+were judged good enough in practice. Keep this entry for whoever wants better
+ones later; there is no need to act on it otherwise.
 
 `naming.humanize_title()` was written to run on the **original source
 filename**, before any CamelCasing, so it can recover real word and clause
@@ -41,31 +59,23 @@ under a name the working stem no longer maps back to.
 | Look the original up in `Archived_Captions` by stem | No format change, but publish grows a dependency on the archive still existing — and `--delete-working` empties it. |
 | Leave it to `--title-map` | Zero code; every batch then needs a hand-written JSON, which is the work the helper was meant to remove. |
 
-### 2. No launcher reaches docx
+### 2. No test coverage
 
-`3_Publish_Transcripts.command` never passes `--format`, so the double-click
-audience this repo is built for cannot produce a docx at all. `--title-map`
-and `--speaker-map` are CLI-only for the same reason. A `[1] HTML / [2] Word`
-prompt alongside the existing Basic/AI one is the obvious shape.
+`tests/` has nothing for `docx_publish.py` or for the `naming.py` helpers the
+docx work added (`humanize_title`, `camelize_title`, `safe_filename`,
+`transcript_docx_name`) — and `tests/` is not mirrored to the skill copies
+either (see *Skill mirrors are not diff-checked* below).
 
-Whoever adds that prompt also has to decide **which interpreter gets
-python-docx**, and it is not the obvious one. Basic mode runs the system
-python (`$PY`); only AI mode runs `pipeline/.venv`. So installing the library
-in `0_Setup_AI_Cleanup.command` would cover AI runs only — while Word output
-is arguably most wanted alongside *free* Basic cleanup. That is why the
-dependency fix above stopped at declaring it and failing clearly, and left
-the launchers alone.
+`transcript_docx_name` is the one worth covering first: it already had the
+doubled-prefix bug above, and it has a real edge case a careless fix would
+reintroduce — a title like "Transcripts of the Board Meeting" must *not* be
+stripped to "sOfTheBoardMeeting". `humanize_title` is likewise pure string
+logic with documented edge cases (the three underscore patterns,
+`_MINOR_WORDS`, `_COMPOUND_FIXES`), cheap to cover whenever §1 is picked up.
 
-### 3. No test coverage
-
-`tests/` has nothing for `docx_publish.py` or for the three new `naming.py`
-helpers (`humanize_title`, `camelize_title`, `safe_filename`) — and `tests/`
-is not mirrored to the skill copies either (see *Skill mirrors are not
-diff-checked* below).
-
-`humanize_title` is pure string logic with documented edge cases — the three
-underscore patterns, `_MINOR_WORDS`, `_COMPOUND_FIXES` — so it is cheap to
-cover, and worth doing alongside whichever option in §1 wires it up.
+There is also no test that the docx path produces real Heading 1/Heading 2
+styles rather than bold paragraphs — which is the whole accessibility point of
+publishing to Word, and is invisible to a filename check.
 
 ---
 

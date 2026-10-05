@@ -126,6 +126,18 @@ def transcript_html_name(vtt_name: str) -> str:
     return "Transcript_" + re.sub(r"\.vtt$", "", vtt_name) + ".html"
 
 
+def transcript_docx_name(title: str) -> str:
+    """Filename for a .docx transcript, derived from its display title.
+
+    Built from the title rather than the stem so that a --title-map override
+    renames the file too. The `Transcript_` prefix matches
+    transcript_html_name(); any "Transcript " the title already carries
+    (title_from_stem() prepends one) is dropped so it isn't doubled.
+    """
+    title = re.sub(r"^Transcript\s+", "", title)
+    return safe_filename(f"Transcript_{camelize_title(title)}", "docx")
+
+
 def vtt_stem_for_flaglog(flaglog_filename: str) -> str:
     """Given FlagLog_<stem>.txt (or Applied_FlagLog_<stem>.txt) return <stem>."""
     name = re.sub(r"\.txt$", "", flaglog_filename)
