@@ -6,38 +6,72 @@ and which decisions are still open.
 
 ---
 
-## ⏸ In progress: launchers need a real macOS test before pushing
+## docx publish landed CLI-only, and its title helper is unwired
 
-**Paused:** 2026-08-25 · **Blocking:** `git push`
+**Raised:** 2026-10-04 · **Status:** feature shipped, four gaps open
+**Location:** `pipeline/docx_publish.py`, `cmd_publish` in `pipeline/batch.py`,
+`pipeline/naming.py`
 
-Seven commits sit unpushed on `main`. The last two rewrote the `.command`
-launchers, which could not be exercised beyond a Linux shell — double-click
-behavior, Gatekeeper, and Finder's drag-and-drop path format are all untested
-on a real Mac.
+`publish --format docx` works and is pushed. What follows is what did *not*
+land with it, in severity order.
 
-**Test on a scratch folder, not real captions** — step 3 can delete files.
+### 1. `python-docx` is an undeclared dependency
 
-```bash
-mkdir -p ~/Desktop/captiontest/Raw_Captions
-cp <a few .srt files> ~/Desktop/captiontest/Raw_Captions/
-```
+Nothing in the repo declares it — there is no `requirements.txt`, and
+`0_Setup_AI_Cleanup.command` installs only `anthropic` into `pipeline/.venv`.
+`--format docx` therefore dies on a raw `ImportError` traceback.
 
-1. Double-click `launchers/1_Clean_Captions.command`. If macOS blocks it,
-   right-click → Open → Open. At the prompt, **drag the folder in from Finder**
-   (this is what exercises the backslash-escaping fix — the project folder name
-   contains a space, which is exactly the case that used to fail).
-2. Double-click `2_Apply_FlagLog.command`. It must *not* re-ask for the folder —
-   just `Caption folder: …` and a `[Y/n]`. Confirms the remembered path.
-3. Double-click `3_Publish_Transcripts.command`, answer **n** to "Tidy up?".
-   Then confirm `Edited_Captions` and `Archived_Captions` still have contents.
-   This is the behavior change worth seeing directly: the old code emptied both.
-4. Run step 3 again, answer **y**. Both should now be empty while
-   `HTML_Transcripts` and `VTT_Files` keep their files.
+Worse, the import sits in Phase 3, *after* the judgment phase has run. Under
+`--backend api --batch` that means the batch is submitted and paid for, and
+then the run crashes before writing a single file.
 
-Likeliest failure points, in order: drag-and-drop path handling, Gatekeeper,
-and the `0_Setup_AI_Cleanup` venv path if AI mode is tested (only Basic mode
-was exercised; AI mode needs an API key). Basic mode covers every changed code
-path.
+Two independent fixes:
+
+- Declare the dependency — add `requirements.txt`, and install it in
+  `0_Setup_AI_Cleanup.command` alongside `anthropic`.
+- Move the check to the top of `cmd_publish` and fail with a message naming
+  the install command, so the failure costs nothing.
+
+### 2. `humanize_title()` is dead code
+
+`naming.humanize_title()` was written to run on the **original source
+filename**, before any CamelCasing, so it can recover real word and clause
+boundaries. Nothing calls it.
+
+`cmd_publish` derives the docx title from `title_from_stem(j["stem"])`
+instead — the already-CamelCased working stem, which has thrown those
+boundaries away. The reader-facing title the helper exists to produce never
+reaches a document, and the only way to get a good one today is to hand-write
+a `--title-map` JSON.
+
+Wiring it is not a one-liner, because **the original filename is gone by
+publish time**: the VTT header carries only `Speaker:`, `Course:` and
+`Cleaned:` (`pipeline/vtt.py`), and the original sits in `Archived_Captions`
+under a name the working stem no longer maps back to.
+
+| Option | Trade-off |
+|---|---|
+| Add `Source:` to the VTT header at clean time | Smallest change and survives archiving; needs `strip_header` taught to drop it, and does nothing for VTTs cleaned before the change. |
+| Look the original up in `Archived_Captions` by stem | No format change, but publish grows a dependency on the archive still existing — and `--delete-working` empties it. |
+| Leave it to `--title-map` | Zero code; every batch then needs a hand-written JSON, which is the work the helper was meant to remove. |
+
+### 3. No launcher reaches docx
+
+`3_Publish_Transcripts.command` never passes `--format`, so the double-click
+audience this repo is built for cannot produce a docx at all. `--title-map`
+and `--speaker-map` are CLI-only for the same reason. A `[1] HTML / [2] Word`
+prompt alongside the existing Basic/AI one is the obvious shape.
+
+### 4. No test coverage
+
+`tests/` has nothing for `docx_publish.py` or for the three new `naming.py`
+helpers (`humanize_title`, `camelize_title`, `safe_filename`) — and `tests/`
+is not mirrored to the skill copies either (see *Skill mirrors are not
+diff-checked* below).
+
+`humanize_title` is pure string logic with documented edge cases — the three
+underscore patterns, `_MINOR_WORDS`, `_COMPOUND_FIXES` — so it is cheap to
+cover, and worth doing alongside whichever option in §2 wires it up.
 
 ---
 
