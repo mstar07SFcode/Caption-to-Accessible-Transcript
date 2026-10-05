@@ -206,6 +206,19 @@ def cmd_publish(args) -> int:
     jdir = Path(args.judgment_dir) if args.judgment_dir else None
     out_format = getattr(args, "format", "html")
 
+    # Check the optional docx dependency up front. The render itself happens in
+    # Phase 3, after the judgment phase — importing there would let an --backend
+    # api --batch run submit (and pay for) a batch before failing on the import.
+    if out_format == "docx":
+        try:
+            from .docx_publish import build_docx
+        except ImportError:
+            print("ERROR: --format docx needs the python-docx library, which "
+                  "is not installed.\nInstall it with:\n"
+                  f"  {sys.executable} -m pip install python-docx",
+                  file=sys.stderr)
+            return 1
+
     title_map: dict[str, str] = {}
     if getattr(args, "title_map", None):
         title_map = json.loads(Path(args.title_map).read_text(encoding="utf-8"))
@@ -244,9 +257,6 @@ def cmd_publish(args) -> int:
                 judgments[j["stem"]] = backend.publish(j["doc"].cues, {"title": j["title"]})
 
     # Phase 3 — render output and archive stripped VTTs.
-    if out_format == "docx":
-        from .docx_publish import build_docx
-
     for j in jobs:
         v, doc = j["path"], j["doc"]
         judgment = judgments.get(j["stem"], PublishJudgment(title=j["title"]))

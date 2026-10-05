@@ -8,31 +8,17 @@ and which decisions are still open.
 
 ## docx publish landed CLI-only, and its title helper is unwired
 
-**Raised:** 2026-10-04 · **Status:** feature shipped, four gaps open
+**Raised:** 2026-10-04 · **Status:** feature shipped, three gaps open
+**Fixed 2026-10-04:** the undeclared `python-docx` dependency — `requirements.txt`
+now declares it, and `cmd_publish` checks for it before the judgment phase
+instead of crashing in Phase 3 with a paid batch already spent.
 **Location:** `pipeline/docx_publish.py`, `cmd_publish` in `pipeline/batch.py`,
 `pipeline/naming.py`
 
 `publish --format docx` works and is pushed. What follows is what did *not*
 land with it, in severity order.
 
-### 1. `python-docx` is an undeclared dependency
-
-Nothing in the repo declares it — there is no `requirements.txt`, and
-`0_Setup_AI_Cleanup.command` installs only `anthropic` into `pipeline/.venv`.
-`--format docx` therefore dies on a raw `ImportError` traceback.
-
-Worse, the import sits in Phase 3, *after* the judgment phase has run. Under
-`--backend api --batch` that means the batch is submitted and paid for, and
-then the run crashes before writing a single file.
-
-Two independent fixes:
-
-- Declare the dependency — add `requirements.txt`, and install it in
-  `0_Setup_AI_Cleanup.command` alongside `anthropic`.
-- Move the check to the top of `cmd_publish` and fail with a message naming
-  the install command, so the failure costs nothing.
-
-### 2. `humanize_title()` is dead code
+### 1. `humanize_title()` is dead code
 
 `naming.humanize_title()` was written to run on the **original source
 filename**, before any CamelCasing, so it can recover real word and clause
@@ -55,14 +41,22 @@ under a name the working stem no longer maps back to.
 | Look the original up in `Archived_Captions` by stem | No format change, but publish grows a dependency on the archive still existing — and `--delete-working` empties it. |
 | Leave it to `--title-map` | Zero code; every batch then needs a hand-written JSON, which is the work the helper was meant to remove. |
 
-### 3. No launcher reaches docx
+### 2. No launcher reaches docx
 
 `3_Publish_Transcripts.command` never passes `--format`, so the double-click
 audience this repo is built for cannot produce a docx at all. `--title-map`
 and `--speaker-map` are CLI-only for the same reason. A `[1] HTML / [2] Word`
 prompt alongside the existing Basic/AI one is the obvious shape.
 
-### 4. No test coverage
+Whoever adds that prompt also has to decide **which interpreter gets
+python-docx**, and it is not the obvious one. Basic mode runs the system
+python (`$PY`); only AI mode runs `pipeline/.venv`. So installing the library
+in `0_Setup_AI_Cleanup.command` would cover AI runs only — while Word output
+is arguably most wanted alongside *free* Basic cleanup. That is why the
+dependency fix above stopped at declaring it and failing clearly, and left
+the launchers alone.
+
+### 3. No test coverage
 
 `tests/` has nothing for `docx_publish.py` or for the three new `naming.py`
 helpers (`humanize_title`, `camelize_title`, `safe_filename`) — and `tests/`
@@ -71,7 +65,7 @@ diff-checked* below).
 
 `humanize_title` is pure string logic with documented edge cases — the three
 underscore patterns, `_MINOR_WORDS`, `_COMPOUND_FIXES` — so it is cheap to
-cover, and worth doing alongside whichever option in §2 wires it up.
+cover, and worth doing alongside whichever option in §1 wires it up.
 
 ---
 

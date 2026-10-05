@@ -1,0 +1,16 @@
+# Both of these are optional. The default workflow — basic cleanup and HTML
+# publish, which is what the launchers run unless you choose otherwise — needs
+# nothing beyond the Python standard library.
+#
+# Install only what you actually use:
+#
+#   anthropic     AI cleanup and AI transcript structure (--backend api).
+#                 0_Setup_AI_Cleanup.command installs this for you.
+#
+#   python-docx   Word output (publish --format docx). Not installed by any
+#                 launcher; install it into whichever interpreter you run the
+#                 pipeline with. publish --format docx names that interpreter
+#                 for you if the library is missing.
+
+anthropic
+python-docx
