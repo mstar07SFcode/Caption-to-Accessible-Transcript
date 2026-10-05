@@ -39,10 +39,11 @@ Publish judgment:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .parse import Cue
+from .parse import Cue, timecode_to_seconds
 
 
 # ---- Result containers -----------------------------------------------------
@@ -88,11 +89,75 @@ class JudgmentBackend(Protocol):
     def publish(self, cues: list[Cue], context: dict) -> PublishJudgment: ...
 
 
+# ---- Paragraph breaks from delivery timing ---------------------------------
+#
+# The silence between two cues is measured data, not an editorial judgment
+# about what the words mean, so the no-LLM path is entitled to use it. What it
+# cannot recover is topic structure: headings still need a real backend.
+
+_SENTENCE_END_RE = re.compile(r"""[.!?]["')\]]*\s*$""")
+
+# A break needs a genuine pause in delivery. The floor rules out the
+# millisecond gaps that merely separate adjacent captions; the percentile
+# raises the bar for a speaker who pauses constantly, so a slow talker doesn't
+# get a paragraph break at every cue.
+_MIN_PAUSE_SECONDS = 0.45
+_PAUSE_PERCENTILE = 80
+
+# Keep paragraphs from becoming either one-line stubs or walls of text.
+_MIN_WORDS_PER_PARAGRAPH = 25
+_MAX_WORDS_PER_PARAGRAPH = 150
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    """Linear-interpolated percentile of an already-sorted, non-empty list."""
+    k = (len(values) - 1) * pct / 100
+    lo = int(k)
+    hi = min(lo + 1, len(values) - 1)
+    if lo == hi:
+        return values[lo]
+    return values[lo] + (values[hi] - values[lo]) * (k - lo)
+
+
+def paragraph_breaks_from_timing(cues: list[Cue]) -> list[int]:
+    """Cue indices that should begin a new paragraph, read off the timing.
+
+    Breaks where the speaker paused for longer than most of their pauses in
+    this recording *and* had finished a sentence. The sentence test is dropped
+    when the captions are mostly unpunctuated, since it would otherwise
+    suppress every break.
+    """
+    if not cues:
+        return []
+
+    gaps = [max(0.0, timecode_to_seconds(b.start) - timecode_to_seconds(a.end))
+            for a, b in zip(cues, cues[1:])]
+    pauses = sorted(g for g in gaps if g > 0)
+    threshold = max(_MIN_PAUSE_SECONDS,
+                    _percentile(pauses, _PAUSE_PERCENTILE) if pauses else 0.0)
+    punctuated = (sum(1 for c in cues if _SENTENCE_END_RE.search(c.text))
+                  >= len(cues) * 0.2)
+
+    breaks = [cues[0].index]
+    words = len(cues[0].text.split())
+    for gap, prev, cur in zip(gaps, cues, cues[1:]):
+        ends_sentence = not punctuated or bool(_SENTENCE_END_RE.search(prev.text))
+        if ((gap >= threshold and ends_sentence
+             and words >= _MIN_WORDS_PER_PARAGRAPH)
+                or words >= _MAX_WORDS_PER_PARAGRAPH):
+            breaks.append(cur.index)
+            words = 0
+        words += len(cur.text.split())
+    return breaks
+
+
 class StubBackend:
     """No-LLM backend: applies zero corrections and emits trivial publish JSON.
 
     Lets the deterministic pipeline run and be tested end-to-end. With this
-    backend, cleanup output = source minus fillers and auto-gen header only.
+    backend, cleanup output = source minus fillers and auto-gen header only,
+    and paragraphs come from pause length rather than from any reading of the
+    text (see paragraph_breaks_from_timing).
     """
 
     def cleanup(self, cues: list[Cue], context: dict) -> CleanupJudgment:
@@ -103,7 +168,7 @@ class StubBackend:
             title=context.get("title", ""),
             sections=[{"level": 2, "title": "Transcript", "start_entry": cues[0].index}]
             if cues else [],
-            paragraph_breaks=[c.index for c in cues],  # one para per cue
+            paragraph_breaks=paragraph_breaks_from_timing(cues),
         )
 
 
