@@ -132,3 +132,109 @@ def vtt_stem_for_flaglog(flaglog_filename: str) -> str:
     name = re.sub(r"^Applied_", "", name)
     name = re.sub(r"^FlagLog_", "", name)
     return name
+
+
+# ---- Human-readable title (for docx/report output, not the working VTT) ---
+#
+# transform_stem() above is deliberately lossy — it CamelCases everything into
+# a compact, filesystem-safe token, which throws away spacing cues. When a
+# reader-facing title is needed (a published document, not a working file),
+# humanize_title() runs on the *original* source filename instead, before any
+# CamelCasing, so it can recover real word and clause boundaries.
+
+_MINOR_WORDS = {
+    "a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of",
+    "on", "or", "so", "the", "to", "up", "yet", "with",
+}
+
+# Product/compound names the camelCase splitter below would otherwise break
+# apart (it inserts a space at every lower->upper letter boundary).
+_COMPOUND_FIXES = {
+    "Power Point": "PowerPoint",
+}
+
+# Known miscapitalizations worth correcting in a display title.
+_SPELLING_FIXES = {
+    "Youtube": "YouTube",
+}
+
+
+def _split_camel_words(s: str) -> str:
+    """Insert spaces at camelCase boundaries; leave ALL-CAPS/code tokens
+    (e.g. 'UDOIT', 'M2') intact. Shared logic with publish.py's title
+    transform."""
+    def space_word(word: str) -> str:
+        if re.fullmatch(r"[A-Z0-9.\-]+", word):
+            return word
+        word = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", word)
+        word = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", word)
+        return word
+    return " ".join(space_word(w) for w in s.split(" ") if w)
+
+
+def humanize_title(raw_filename: str) -> str:
+    """Turn a raw source caption filename into a reader-facing title.
+
+    Strips the locale/tag suffixes a caption export adds, splits camelCase
+    runs into words, and applies standard title-case minor-word lowercasing.
+    Three underscore patterns are treated as separator hints rather than
+    plain word breaks, since exports sometimes use `_` as a stand-in for
+    punctuation the filesystem wouldn't allow:
+      - `word _ word`  (spaces on both sides) -> " and "  (e.g. a slash)
+      - `word_ word`   (space after only)      -> ": "     (e.g. a colon/subtitle)
+      - every other `_`                        -> " "      (plain word break)
+    """
+    s = re.sub(r"\.(srt|txt|vtt)$", "", raw_filename, flags=re.IGNORECASE)
+    s = _LOCALE_RE.sub("", s)
+    s = _LOCALE_GENERIC_RE.sub("", s)
+    s = _TAG_RE.sub("", s)
+
+    s = re.sub(r"\s+_\s+", " and ", s)
+    s = re.sub(r"_\s+", ": ", s)
+    s = re.sub(r"\s+_", " ", s)
+    s = s.replace("_", " ")
+
+    s = _split_camel_words(s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+
+    for wrong, right in _SPELLING_FIXES.items():
+        s = re.sub(rf"\b{wrong}\b", right, s)
+    for split_form, joined in _COMPOUND_FIXES.items():
+        s = s.replace(split_form, joined)
+
+    words = s.split(" ")
+    out = []
+    for i, w in enumerate(words):
+        prev = words[i - 1] if i > 0 else None
+        starts_clause = (i == 0) or (prev is not None and prev.endswith(":"))
+        out.append(w.lower() if (not starts_clause and w.lower() in _MINOR_WORDS) else w)
+    return " ".join(out)
+
+
+def camelize_title(title: str) -> str:
+    """CamelCase a human-readable title for use in a short filename, e.g.
+    'Using UDOIT: A Hands-on Demonstration' -> 'UsingUDOITAHandsOnDemonstration'.
+
+    Drops punctuation that doesn't carry word-boundary meaning (colons,
+    parentheses) rather than encoding it, then reuses the same CamelCase pass
+    as the working-file naming in transform_stem() so the two conventions
+    stay visually consistent.
+    """
+    s = title.replace(":", " ").replace("(", " ").replace(")", " ")
+    return _camel(s)
+
+
+_ILLEGAL_FILENAME_RE = re.compile(r'[<>:"/\\|?*]')
+
+
+def safe_filename(title: str, ext: str) -> str:
+    """A filesystem-safe filename for a human title, e.g. from humanize_title().
+
+    ':' becomes ' -' (colon is invalid on Windows and awkward in Finder);
+    '/' becomes ' and ' (path separator); any other illegal character is
+    dropped. `ext` should not include the leading dot.
+    """
+    s = title.replace(":", " -").replace("/", " and ")
+    s = _ILLEGAL_FILENAME_RE.sub("", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return f"{s}.{ext.lstrip('.')}"

@@ -204,6 +204,14 @@ def cmd_publish(args) -> int:
     htmlout.mkdir(parents=True, exist_ok=True)
     backend = make_backend(args)
     jdir = Path(args.judgment_dir) if args.judgment_dir else None
+    out_format = getattr(args, "format", "html")
+
+    title_map: dict[str, str] = {}
+    if getattr(args, "title_map", None):
+        title_map = json.loads(Path(args.title_map).read_text(encoding="utf-8"))
+    speaker_map: dict[str, str] = {}
+    if getattr(args, "speaker_map", None):
+        speaker_map = json.loads(Path(args.speaker_map).read_text(encoding="utf-8"))
 
     vtts = sorted(p for p in edited.glob("*.vtt"))
     if not vtts:
@@ -235,20 +243,33 @@ def cmd_publish(args) -> int:
             else:
                 judgments[j["stem"]] = backend.publish(j["doc"].cues, {"title": j["title"]})
 
-    # Phase 3 — render HTML and archive stripped VTTs.
+    # Phase 3 — render output and archive stripped VTTs.
+    if out_format == "docx":
+        from .docx_publish import build_docx
+
     for j in jobs:
         v, doc = j["path"], j["doc"]
         judgment = judgments.get(j["stem"], PublishJudgment(title=j["title"]))
-        html_text = build_html(doc.cues, judgment,
-                               speaker=doc.meta.get("speaker", ""),
-                               course=doc.meta.get("course", ""),
-                               title=title_from_stem(j["stem"]))
-        (htmlout / naming.transcript_html_name(v.name)).write_text(
-            html_text, encoding="utf-8")
+        speaker = speaker_map.get(j["stem"], doc.meta.get("speaker", ""))
+        course = doc.meta.get("course", "")
+
+        if out_format == "docx":
+            title = title_map.get(j["stem"], title_from_stem(j["stem"]))
+            docx_doc = build_docx(doc.cues, judgment, speaker=speaker,
+                                  course=course, title=title)
+            out_name = naming.safe_filename(
+                f"Transcript_{naming.camelize_title(title)}", "docx")
+            docx_doc.save(str(htmlout / out_name))
+        else:
+            html_text = build_html(doc.cues, judgment, speaker=speaker,
+                                   course=course, title=title_from_stem(j["stem"]))
+            (htmlout / naming.transcript_html_name(v.name)).write_text(
+                html_text, encoding="utf-8")
+
         (vttout / v.name).write_text(
             V.strip_header(v.read_text(encoding="utf-8")), encoding="utf-8")
 
-    print(f"Published {len(vtts)} transcript(s) to {htmlout}")
+    print(f"Published {len(vtts)} transcript(s) ({out_format}) to {htmlout}")
 
     # Destructive cleanup is opt-in. It runs only AFTER the HTML and archived
     # VTTs above are safely written, so a failed run can never leave the user
@@ -312,13 +333,24 @@ def main(argv=None) -> int:
     p = sub.add_parser("publish")
     p.add_argument("--edited", required=True)
     p.add_argument("--vttout", required=True)
-    p.add_argument("--html", required=True)
+    p.add_argument("--html", required=True,
+                   help="output directory for published transcripts "
+                        "(named --html for history; used for docx output too "
+                        "when --format docx)")
     p.add_argument("--archive", required=True)
     p.add_argument("--backend", choices=["stub", "api"], default="stub")
     p.add_argument("--model", default=None)
     p.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")
     p.add_argument("--judgment-dir", default=None)
+    p.add_argument("--format", choices=["html", "docx"], default="html",
+                   help="output document format (default html)")
+    p.add_argument("--title-map", default=None,
+                   help="path to a JSON {vtt_stem: title} file overriding the "
+                        "default derived title (and, for docx, the filename)")
+    p.add_argument("--speaker-map", default=None,
+                   help="path to a JSON {vtt_stem: speaker} file overriding "
+                        "the VTT header's Speaker: value at publish time")
     p.add_argument("--delete-working", action="store_true",
                    help="after publishing, empty Archived_Captions and delete "
                         "the working VTTs and flag logs. Off by default: "
