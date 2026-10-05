@@ -104,9 +104,12 @@ _SENTENCE_END_RE = re.compile(r"""[.!?]["')\]]*\s*$""")
 _MIN_PAUSE_SECONDS = 0.45
 _PAUSE_PERCENTILE = 80
 
-# Keep paragraphs from becoming either one-line stubs or walls of text.
+# Keep paragraphs from becoming one-line stubs, and give a speaker who never
+# pauses long enough *some* eventual break. The cap is deliberately liberal
+# because it is only a backstop — pause length should decide almost every
+# break — and it never ends a paragraph mid-sentence; see below.
 _MIN_WORDS_PER_PARAGRAPH = 25
-_MAX_WORDS_PER_PARAGRAPH = 150
+_SOFT_WORD_CAP = 400
 
 
 def _percentile(values: list[float], pct: float) -> float:
@@ -123,9 +126,11 @@ def paragraph_breaks_from_timing(cues: list[Cue]) -> list[int]:
     """Cue indices that should begin a new paragraph, read off the timing.
 
     Breaks where the speaker paused for longer than most of their pauses in
-    this recording *and* had finished a sentence. The sentence test is dropped
-    when the captions are mostly unpunctuated, since it would otherwise
-    suppress every break.
+    this recording *and* had finished a sentence. In punctuated captions a
+    paragraph therefore never ends mid-sentence — a cue ending in a comma
+    means the thought continues, so it is not a candidate. The sentence test
+    is dropped when the captions are mostly unpunctuated, since it would
+    otherwise suppress every break.
     """
     if not cues:
         return []
@@ -141,10 +146,14 @@ def paragraph_breaks_from_timing(cues: list[Cue]) -> list[int]:
     breaks = [cues[0].index]
     words = len(cues[0].text.split())
     for gap, prev, cur in zip(gaps, cues, cues[1:]):
+        wants_break = ((gap >= threshold and words >= _MIN_WORDS_PER_PARAGRAPH)
+                       or words >= _SOFT_WORD_CAP)
+        # The cap only *arms* a break; it takes effect at the next sentence
+        # end, so an over-long paragraph still closes cleanly rather than on a
+        # comma. Unpunctuated captions have no sentence end to wait for, so
+        # there the cap has to act on its own.
         ends_sentence = not punctuated or bool(_SENTENCE_END_RE.search(prev.text))
-        if ((gap >= threshold and ends_sentence
-             and words >= _MIN_WORDS_PER_PARAGRAPH)
-                or words >= _MAX_WORDS_PER_PARAGRAPH):
+        if wants_break and ends_sentence:
             breaks.append(cur.index)
             words = 0
         words += len(cur.text.split())
