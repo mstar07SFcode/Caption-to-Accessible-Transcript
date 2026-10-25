@@ -14,7 +14,7 @@
 
 LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$LAUNCHER_DIR/.caption_workflow"
-WORK_SUBFOLDERS=(Raw_Captions Edited_Captions Archived_Captions VTT_Files HTML_Transcripts)
+WORK_SUBFOLDERS=(Raw_Captions Edited_Captions Archived_Captions VTT_Files HTML_Transcripts Word_Transcripts)
 
 # ---- Python ------------------------------------------------
 
