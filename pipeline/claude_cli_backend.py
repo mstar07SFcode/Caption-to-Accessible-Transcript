@@ -34,7 +34,14 @@ from .api_backend import _extract_json, APIBackendError
 from .judgment import CleanupJudgment, PublishJudgment, cues_as_prompt_text
 from .parse import Cue
 
-DEFAULT_MODEL = "sonnet"          # Claude Code model alias
+# The skill runs its judgment as sub-agents inside a Claude Code session,
+# so they inherit that session's model -- Opus. This backend was passing
+# sonnet, and the difference showed up as exactly the knowledge-shaped
+# misses you would expect: "642 H" left unformatted where the skill wrote
+# "642(h)", "fact base case" left where the skill wrote "fact-based".
+# Opus fixes both and punctuates better besides. Override per run with
+# CAPTION_CLAUDE_MODEL.
+DEFAULT_MODEL = "opus"            # Claude Code model alias
 DEFAULT_EFFORT = "high"           # the continuation/capitalization sweep
                                   # is methodical work over every adjacent
                                   # pair; at default effort the model finds
