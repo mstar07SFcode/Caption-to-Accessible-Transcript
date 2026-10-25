@@ -2,8 +2,8 @@
 # ============================================================
 #  STEP 2 — Publish Transcripts
 #  Double-click to convert the cleaned .vtt files into
-#  accessible transcripts — a web page (.html) or a Word
-#  document (.docx), whichever you pick at the prompt.
+#  accessible transcripts — a web page (.html), a Word
+#  document (.docx), or both, whichever you pick at the prompt.
 #  Nothing is deleted unless you ask for it at the prompt.
 # ============================================================
 
@@ -21,7 +21,7 @@ get_workdir
 DIR="$WORKDIR"
 
 echo "This will:"
-echo "  - save transcripts to HTML_Transcripts or Word_Transcripts"
+echo "  - save transcripts to HTML_Transcripts and/or Word_Transcripts"
 echo "    (you choose the format below)"
 echo "  - archive clean .vtt files to VTT_Files"
 echo
@@ -80,40 +80,68 @@ echo
 # decides which Python actually runs: Basic uses the system Python, AI uses
 # pipeline/.venv. Word output needs python-docx installed in whichever one
 # that turned out to be, so the check below uses $RUNPY rather than guessing.
-OUTDIR="$DIR/HTML_Transcripts"
+# Word output needs python-docx in whichever interpreter $RUNPY turned out to
+# be. Offers to install it; returns non-zero if Word output is not usable, so
+# both the Word and the Both choice can fall back to a web page.
+ensure_docx() {
+  if "$RUNPY" -c "import docx" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo
+  echo "Word output needs the python-docx library, which isn't installed yet."
+  read -r -p "Install it now? [Y/n] " GETDOCX
+  case "$GETDOCX" in
+    n|N|no|NO) return 1 ;;
+  esac
+  if "$RUNPY" -m pip install python-docx; then
+    echo "Word output is ready."
+    return 0
+  fi
+  echo "Install failed."
+  return 1
+}
+
+HTMLDIR="$DIR/HTML_Transcripts"
+WORDDIR="$DIR/Word_Transcripts"
+DONE_MSG="Accessible transcripts are in: $HTMLDIR"
+
 echo "Output format:"
 echo "  [1] Web page (.html) — accessible transcript for posting online"
 echo "  [2] Word (.docx)     — formatted document you can edit"
-read -r -p "Choose 1 or 2 [1]: " FMT
-if [ "$FMT" = "2" ]; then
-  if "$RUNPY" -c "import docx" >/dev/null 2>&1; then
-    ARGS+=(--format docx)
-    OUTDIR="$DIR/Word_Transcripts"
-  else
-    echo
-    echo "Word output needs the python-docx library, which isn't installed yet."
-    read -r -p "Install it now? [Y/n] " GETDOCX
-    case "$GETDOCX" in
-      n|N|no|NO) echo "Using web page (.html) instead." ;;
-      *)
-        if "$RUNPY" -m pip install python-docx; then
-          ARGS+=(--format docx)
-          OUTDIR="$DIR/Word_Transcripts"
-          echo "Word output is ready."
-        else
-          echo "Install failed. Using web page (.html) instead."
-        fi ;;
-    esac
-  fi
-fi
-ARGS+=(--html "$OUTDIR")
+echo "  [3] Both             — one of each, from a single AI pass"
+read -r -p "Choose 1, 2 or 3 [1]: " FMT
+case "$FMT" in
+  2)
+    if ensure_docx; then
+      # --format docx writes to --html, which is why the Word folder is
+      # passed there. Unchanged from before --docx existed.
+      ARGS+=(--format docx --html "$WORDDIR")
+      DONE_MSG="Word transcripts are in: $WORDDIR"
+    else
+      echo "Using web page (.html) instead."
+      ARGS+=(--html "$HTMLDIR")
+    fi ;;
+  3)
+    if ensure_docx; then
+      # One judgment, two renders — asking for both costs one AI pass.
+      ARGS+=(--format both --html "$HTMLDIR" --docx "$WORDDIR")
+      DONE_MSG="Web transcripts are in:  $HTMLDIR
+Word transcripts are in: $WORDDIR"
+    else
+      echo "Using web page (.html) only."
+      ARGS+=(--html "$HTMLDIR")
+    fi ;;
+  *)
+    ARGS+=(--html "$HTMLDIR") ;;
+esac
 echo
 
 cd "$PIPELINE" || exit 1
 "$RUNPY" -m pipeline.batch publish "${ARGS[@]}"
 
 echo
-echo "Done. Accessible transcripts are in: $OUTDIR"
+echo "Done."
+echo "$DONE_MSG"
 echo "Panopto-ready caption files are in:  $DIR/VTT_Files"
 echo
 read -n1 -r -p "Press any key to close..."
