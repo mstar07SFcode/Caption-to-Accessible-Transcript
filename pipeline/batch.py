@@ -37,6 +37,16 @@ def make_backend(args):
         except APIBackendError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(2)
+    if getattr(args, "backend", "stub") == "claude":
+        # AI through the Claude Code CLI, signed in with your Claude plan —
+        # no API key and no per-token cost. See pipeline/claude_cli_backend.py.
+        # Exit 3 (not 2) so a caller can tell "not signed in" from "bad key".
+        from .claude_cli_backend import ClaudeCLIBackend, ClaudeCLIError
+        try:
+            return ClaudeCLIBackend(model=getattr(args, "model", None))
+        except ClaudeCLIError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(3)
     return StubBackend()
 
 
@@ -320,7 +330,7 @@ def main(argv=None) -> int:
     c.add_argument("--archive", required=True)
     c.add_argument("--course", default=None)
     c.add_argument("--speaker", default=None)
-    c.add_argument("--backend", choices=["stub", "api"], default="stub")
+    c.add_argument("--backend", choices=["stub", "api", "claude"], default="stub")
     c.add_argument("--model", default=None)
     c.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")
@@ -346,7 +356,7 @@ def main(argv=None) -> int:
                         "(named --html for history; used for docx output too "
                         "when --format docx)")
     p.add_argument("--archive", required=True)
-    p.add_argument("--backend", choices=["stub", "api"], default="stub")
+    p.add_argument("--backend", choices=["stub", "api", "claude"], default="stub")
     p.add_argument("--model", default=None)
     p.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")

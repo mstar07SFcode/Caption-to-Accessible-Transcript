@@ -1,0 +1,12 @@
+# Desktop GUI dependencies. The core pipeline needs none of these.
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements-gui.txt
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.0
+pywebview>=5.0
+# Stores the API key in the macOS Keychain / Windows Credential Manager
+keyring>=25.0
+# Optional: AI mode
+anthropic>=0.40
+# Word (.docx) transcript output
+python-docx>=1.1
