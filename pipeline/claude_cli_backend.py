@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -89,6 +90,39 @@ def _save_reply(text: str) -> str:
         return str(_LAST_REPLY)
     except OSError:
         return ""
+
+
+# --- cues prompt file (index<TAB>text; a cue's text may itself wrap) --------
+
+_CUE_LINE_RE = re.compile(r"^(\d+)\t(.*)$")
+
+
+def _parse_cue_text(text: str) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    idx, buf = None, []
+    for line in text.split("\n"):
+        m = _CUE_LINE_RE.match(line)
+        if m:
+            if idx is not None:
+                entries.append((idx, "\n".join(buf)))
+            idx, buf = int(m.group(1)), [m.group(2)]
+        elif idx is not None:
+            buf.append(line)
+    if idx is not None:
+        entries.append((idx, "\n".join(buf)))
+    return entries
+
+
+def _apply_to_cue_text(text: str, corrections: list[dict]) -> str:
+    """Fold a pass's corrections into the cues text, so the next pass reads
+    what the file will actually say rather than the original."""
+    entries = _parse_cue_text(text)
+    by = dict(entries)
+    for c in corrections:
+        e, f, r = c.get("entry"), c.get("find"), c.get("replace")
+        if e in by and f and r is not None and f in by[e]:
+            by[e] = by[e].replace(f, r, 1)
+    return "\n".join(f"{i}\t{by[i]}" for i, _ in entries)
 
 
 def find_claude() -> str | None:
@@ -262,39 +296,12 @@ class ClaudeCLIBackend:
 
     # -- Per-file judgment, as the caption-cleanup skill runs it -----------
 
-    def judge_file(self, cues_path: Path, out_path: Path) -> tuple[int, int]:
-        """Review ONE caption file: read its cues, write its judgment JSON.
-
-        This mirrors step 4 of the caption-cleanup skill -- one agent per file,
-        reading its own cues with a tool and writing its own judgment with a
-        tool. The agent never sees another file, which is what keeps a long
-        lecture from being skimmed. Returns (corrections, flags).
-        """
+    def _review(self, workdir: Path, read_name: str, write_name: str,
+                instruction: str) -> dict:
+        """Run one reviewer turn in workdir; return the JSON it wrote."""
         with tempfile.TemporaryDirectory(prefix="caption-claude-") as tmp:
             sys_file = Path(tmp) / "system.md"
             sys_file.write_text(self._system_for("corrections.md"), encoding="utf-8")
-
-            # Deliberately does NOT enumerate particular rules. An earlier
-            # version named the two sweeps most often missed; the reviewer
-            # then did those two well and skipped others the rules require,
-            # hyphenation among them -- 52 corrections where a version that
-            # just said "apply all of them" found 104 on the same lecture.
-            instruction = (
-                f"Read {cues_path.name}. It holds every caption entry for one "
-                "lecture.\n\n"
-                "Your system prompt contains the complete cleanup rules. Apply "
-                "ALL of them to EVERY entry, first to last — not a selection of "
-                "the rules, and not only the opening entries. Work through the "
-                "file systematically; a lecture-length file normally yields "
-                "dozens of corrections spread over its whole length.\n\n"
-                "Correct at 90% confidence or higher. Anything less certain is a "
-                "flag for the reviewer, not a guess.\n\n"
-                f"Write the judgment as one JSON object to {out_path.name}, in "
-                "the shape your system prompt specifies. The file is the output "
-                "— do not put the JSON in your reply. Finish by replying with "
-                "only a count line: DONE: <n> corrections, <n> flags."
-            )
-
             cmd = [self.claude, "-p",
                    "--output-format", "json",
                    "--model", self.model,
@@ -309,25 +316,102 @@ class ClaudeCLIBackend:
             try:
                 r = subprocess.run(cmd, input=instruction, capture_output=True,
                                    text=True, timeout=self.timeout,
-                                   cwd=str(cues_path.parent), env=_child_env())
+                                   cwd=str(workdir), env=_child_env())
             except subprocess.TimeoutExpired:
-                raise ClaudeCLIError(
-                    f"{cues_path.name}: no answer within {self.timeout}s.")
+                raise ClaudeCLIError(f"{read_name}: no answer within {self.timeout}s.")
 
+        out_path = workdir / write_name
         if not out_path.exists():
-            detail = (r.stdout or r.stderr or "")[:400]
-            raise ClaudeCLIError(
-                f"{cues_path.name}: the reviewer wrote no judgment file. {detail}")
+            detail = (r.stdout or r.stderr or "")[:300]
+            raise ClaudeCLIError(f"{read_name}: no judgment file written. {detail}")
         try:
             data = _extract_json(out_path.read_text(encoding="utf-8"))
         except (APIBackendError, json.JSONDecodeError) as e:
-            raise ClaudeCLIError(
-                f"{cues_path.name}: the judgment file was not valid JSON.") from e
-        # Normalize so apply-judgment always finds both keys.
+            raise ClaudeCLIError(f"{read_name}: judgment was not valid JSON.") from e
         data.setdefault("corrections", [])
         data.setdefault("flags", [])
-        out_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        return len(data["corrections"]), len(data["flags"])
+        return data
+
+    def judge_file(self, cues_path: Path, out_path: Path) -> tuple[int, int]:
+        """Review ONE caption file in two passes, writing one judgment JSON.
+
+        Pass 1 applies the rules across the file. Pass 2 then re-reads the cues
+        WITH pass 1's corrections folded in and does only the adjacent-pair
+        sweep -- the continuation and capitalization work that
+        Caption_Cleanup_Rules.md calls the single most common cleanup miss.
+
+        Two passes because that sweep is a different kind of work: it compares
+        neighbours rather than inspecting a cue, and it is only decidable once
+        the other corrections are in place, since most continuations need their
+        comma created before anything can be lowercased. As one item in a long
+        instruction it was consistently the thinnest part of the result.
+        """
+        workdir = cues_path.parent
+        original = cues_path.read_text(encoding="utf-8")
+
+        first = self._review(
+            workdir, cues_path.name, out_path.name,
+            f"Read {cues_path.name}. It holds every caption entry for one "
+            "lecture.\n\n"
+            "Your system prompt contains the complete cleanup rules. Apply ALL "
+            "of them to EVERY entry, first to last — not a selection of the "
+            "rules, and not only the opening entries. A lecture-length file "
+            "normally yields dozens of corrections spread over its whole "
+            "length.\n\n"
+            "Correct at 90% confidence or higher. Anything less certain is a "
+            "flag for the reviewer, not a guess. An unfamiliar proper noun is a "
+            "flag: do not replace a name you do not recognise with a marker.\n\n"
+            f"Write the judgment as one JSON object to {out_path.name}, in the "
+            "shape your system prompt specifies. The file is the output — do "
+            "not put the JSON in your reply. Finish with only a count line: "
+            "DONE: <n> corrections, <n> flags.")
+
+        # Pass 2 reads the file as pass 1 will leave it.
+        pass2_cues = workdir / f"{cues_path.name[:-len('.cues.txt')]}.pass2.txt"
+        pass2_out = f"{out_path.name[:-len('.json')]}.pass2.json"
+        pass2_cues.write_text(
+            _apply_to_cue_text(original, first["corrections"]), encoding="utf-8")
+
+        try:
+            second = self._review(
+                workdir, pass2_cues.name, pass2_out,
+                f"Read {pass2_cues.name}. These captions have already had one "
+                "cleanup pass; what you see is their current text.\n\n"
+                "Do ONE job: walk every adjacent pair of entries, first to "
+                "last, and decide whether the sentence carries across the "
+                "break.\n"
+                "  * If it does, the earlier entry must not end with a full "
+                "stop — make it a comma or nothing — and the next entry's "
+                "first word must be lowercase unless it is a proper noun.\n"
+                "  * If it does not, the earlier entry should close properly "
+                "and the next should start with a capital.\n\n"
+                "Watch for a next-entry opening with a conjunction (and, but, "
+                "or, so, yet, while, although, because, since, when); these "
+                "almost always continue the previous entry.\n\n"
+                "Report ONLY changes of this kind; everything else has been "
+                "handled. Each correction's `find` must appear verbatim in the "
+                "entry you name, as the text now reads.\n\n"
+                f"Write them as one JSON object to {pass2_out}, same shape. The "
+                "file is the output. Finish with only: DONE: <n> corrections.")
+        except ClaudeCLIError as e:
+            # The sweep is an improvement, not a precondition — keep pass 1.
+            self.progress(f"  (second pass skipped: {e})")
+            second = {"corrections": [], "flags": []}
+
+        # Pass 1 first, so pass 2's find strings match once pass 1 has landed.
+        merged = {
+            "corrections": list(first["corrections"]) + list(second["corrections"]),
+            "flags": list(first["flags"]),
+        }
+        seen = {(f.get("entry"), f.get("found")) for f in merged["flags"]}
+        for f in second["flags"]:
+            if (f.get("entry"), f.get("found")) not in seen:
+                merged["flags"].append(f)
+
+        out_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        pass2_cues.unlink(missing_ok=True)
+        (workdir / pass2_out).unlink(missing_ok=True)
+        return len(merged["corrections"]), len(merged["flags"])
 
     # -- JudgmentBackend ----------------------------------------------------
 
