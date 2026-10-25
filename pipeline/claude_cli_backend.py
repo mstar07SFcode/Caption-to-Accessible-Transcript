@@ -348,6 +348,9 @@ class ClaudeCLIBackend:
         """
         workdir = cues_path.parent
         original = cues_path.read_text(encoding="utf-8")
+        label = cues_path.name[: -len(".cues.txt")]
+        # Several reviewers run at once, so every line names its file.
+        self.progress(f"     {label}: pass 1 of 2 — reviewing the whole file")
 
         first = self._review(
             workdir, cues_path.name, out_path.name,
@@ -365,6 +368,10 @@ class ClaudeCLIBackend:
             "shape your system prompt specifies. The file is the output — do "
             "not put the JSON in your reply. Finish with only a count line: "
             "DONE: <n> corrections, <n> flags.")
+
+        self.progress(f"     {label}: pass 1 found {len(first['corrections'])} "
+                      f"correction(s), {len(first['flags'])} flag(s) — "
+                      f"now sweeping sentence breaks")
 
         # Pass 2 reads the file as pass 1 will leave it.
         pass2_cues = workdir / f"{cues_path.name[:-len('.cues.txt')]}.pass2.txt"
@@ -416,12 +423,23 @@ class ClaudeCLIBackend:
     # -- JudgmentBackend ----------------------------------------------------
 
     def cleanup(self, cues: list[Cue], context: dict) -> CleanupJudgment:
+        """The JudgmentBackend entry point, used by `batch.py clean
+        --backend claude`.
+
+        It runs the same two-pass per-file review as judge_file, which the GUI
+        calls directly. Routing both through one implementation keeps the
+        command line and the window honest about meaning the same thing by
+        `--backend claude`; before this, the CLI got a single thin call.
+        """
         if not cues:
             return CleanupJudgment()
-        self.progress("  ...asking Claude (your plan) to review this file - "
-                      "usually under a minute")
-        data = self._ask("corrections.md", "CUES:\n" + cues_as_prompt_text(cues),
-                         schema=CLEANUP_SCHEMA)
+        stem = context.get("stem") or "captions"
+        with tempfile.TemporaryDirectory(prefix="caption-judge-") as tmp:
+            cues_path = Path(tmp) / f"{stem}.cues.txt"
+            cues_path.write_text(cues_as_prompt_text(cues), encoding="utf-8")
+            out_path = Path(tmp) / f"{stem}.judgment.json"
+            self.judge_file(cues_path, out_path)
+            data = json.loads(out_path.read_text(encoding="utf-8"))
         return CleanupJudgment.from_json(data)
 
     def publish(self, cues: list[Cue], context: dict) -> PublishJudgment:

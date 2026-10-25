@@ -112,7 +112,9 @@ def cmd_clean(args) -> int:
                 judgments[j["out_stem"]] = CleanupJudgment.from_json(
                     json.loads(jf.read_text()))
             else:
-                judgments[j["out_stem"]] = backend.cleanup(j["cues"], {})
+                # The stem lets a backend label its progress per file.
+                judgments[j["out_stem"]] = backend.cleanup(
+                    j["cues"], {"stem": j["out_stem"]})
 
     # Phase 3 — apply, write outputs, archive sources.
     summary = []

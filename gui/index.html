@@ -178,7 +178,9 @@
     <div class="checks">
       <label><input type="checkbox" id="cleanAI">
         <span><b>Fix misheard words with AI</b> &mdash; corrects recognition
-        errors and flags anything uncertain for you to review.
+        errors and flags anything uncertain for you to review. Each file gets
+        its own reviewer: one pass over the whole file, then a second that
+        re-reads it for sentences running across entry breaks.
         <span class="cost aicost">Uses one API call per file.</span></span></label>
       <label id="cleanBatchRow"><input type="checkbox" id="cleanBatch">
         <span>Batch mode &mdash; about half the cost, but can take several
@@ -353,7 +355,8 @@ function applyEngine() {
   $("cleanBatchRow").hidden = plan;
   if (plan) $("cleanBatch").checked = false;
   document.querySelectorAll(".aicost").forEach(el => el.textContent = plan
-    ? "Uses your Claude plan's usage - about a minute per file, no API key."
+    ? "Uses your Claude plan, no API key. Two reviewer passes per file, "
+      + "about 3-4 minutes each, four files at a time."
     : "Uses one API call per file.");
 }
 
