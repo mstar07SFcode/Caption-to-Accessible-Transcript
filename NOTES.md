@@ -160,3 +160,91 @@ directly, or a sync that is forgotten before committing, drifts silently — and
 A `git diff --no-index` check between root and each mirror, run in CI or as a
 pre-commit step, would close this. Note that `skills/*/SKILL.md` is
 deliberately *not* synced and must be excluded from any such check.
+
+---
+
+## Publish: course display name differs from the filename course code
+
+**Raised:** 2026-10-09 · **Status:** not started
+**Location:** `cmd_publish` in `pipeline/batch.py` (Phase 3, where `course =
+doc.meta.get("course", "")`), argparse block for `publish`
+
+**Problem.** The `--course` value given at cleanup does two jobs: it becomes
+the filename prefix (`DigAccess_MultimediaAccessibilityIntro.vtt`) *and* the
+`Course:` line in the published transcript header. A short code is right for
+filenames; students should see the full course name. On the 2026-10-09
+DigAccess batch (Mishiara Baker, Multimedia Accessibility ×3) the header was
+patched by hand in the three `.docx` files to read "Digital Accessibility".
+
+**Proposed fix.** Add a publish-time override, mirroring `--speaker-map`:
+
+- `--course-name "Digital Accessibility"` — one display name for the whole
+  batch (the common case, since publish batches are already scoped to one
+  course), and/or
+- `--course-map PATH` — JSON `{vtt_stem: course}` for mixed batches.
+
+In Phase 3: `course = course_map.get(stem) or args.course_name or
+doc.meta.get("course", "")`. Applies to both `build_docx` and `build_html`.
+VTT filenames and the archived VTT in `VTT_Files` are unchanged.
+
+**Open decisions.**
+
+- Flag only, or also a lookup table (e.g. `courses.json`: `{"DigAccess":
+  "Digital Accessibility", "PHIL-220": "Asian Philosophy", ...}`) so the
+  display name is applied automatically from the code with no flag needed?
+  The table is less typing per run but is one more file to maintain.
+- Whether the `3_Publish_Transcripts.command` launcher should prompt for it.
+
+**After building:** run `tools/sync_to_skills.sh` (per `UPDATING_THE_PLUGIN.md`)
+and add the flag to `skills/transcript-publish/SKILL.md`.
+
+---
+
+## Review: is SRT → WebVTT conversion necessary?
+
+**Raised:** 2026-10-09 · **Status:** review, nothing to build yet
+**Location:** `pipeline/vtt.py` (`write_vtt`, `strip_header`),
+`pipeline/parse.py` (`parse_vtt` reads `Speaker:`/`Course:` back),
+`cmd_clean` / `cmd_publish` in `pipeline/batch.py`
+
+**The question.** Cleanup currently converts every `.srt`/`.txt` source into
+WebVTT. In practice the working VTT is used for two things: (1) as the cleaned
+caption file uploaded to Panopto, and (2) as a carrier for the `Speaker:` and
+`Course:` metadata lines that publish reads back for the transcript header.
+Job (2) is non-standard — publish has to strip those lines (`strip_header`)
+to make a compliant file for `VTT_Files`. Could the files stay as SRT end to
+end, with title/speaker/course supplied another way?
+
+**Options to weigh.**
+
+1. **Keep VTT as-is (status quo).** Works today; one file carries cues +
+   metadata. Cost: a custom header that is invalid until stripped, and two
+   copies of every caption (`Edited_Captions` + `VTT_Files`).
+2. **Stay SRT; metadata in a sidecar.** Write the cleaned `.srt` plus a
+   per-batch manifest (e.g. `batch.json`: `{stem: {title, speaker, course}}`)
+   that publish reads. Removes the strip step and the custom header; the
+   manifest could also absorb `--title-map` / `--speaker-map` and the
+   course-display-name entry above. Cost: two files to keep together; a
+   moved/renamed caption loses its metadata silently.
+3. **Stay SRT; metadata on the command line only.** Publish takes
+   `--course`/`--speaker`/`--title-map` directly. Simplest, but metadata
+   entered at cleanup is lost and must be re-typed at publish.
+4. **Output format as an option.** `--caption-format {vtt,srt}` matching
+   whatever the source was or the destination needs. Most flexible, most code
+   paths to test.
+
+**Things to check before deciding.**
+
+- Which caption formats Panopto, Canvas Studio, YouTube and Zoom accept for
+  upload, and whether any destination *requires* VTT (verify against current
+  docs — don't assume).
+- Whether any accessibility feature in use depends on VTT-only features
+  (cue positioning/styling, `<v Speaker>` voice tags for multiple speakers).
+  SRT has no standard way to carry speaker identity.
+- Whether the Caption Review Tool (`PythonTool_Caption_Review`) and the Apply
+  Flag Log step assume `.vtt` — both currently pair `FlagLog_<stem>.txt` with
+  `<stem>.vtt`.
+- Effect on the launchers and SKILL.md docs, which all name `.vtt`.
+
+Related: "Publish: course display name differs from the filename course code"
+above — a sidecar manifest (option 2) would solve both.
