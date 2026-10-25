@@ -34,6 +34,10 @@ from .judgment import CleanupJudgment, PublishJudgment, cues_as_prompt_text
 from .parse import Cue
 
 DEFAULT_MODEL = "sonnet"          # Claude Code model alias
+DEFAULT_EFFORT = "high"           # the continuation/capitalization sweep
+                                  # is methodical work over every adjacent
+                                  # pair; at default effort the model finds
+                                  # the obvious name fixes and little else
 DEFAULT_TIMEOUT = 600             # seconds per file
 _PKG = Path(__file__).resolve().parent
 _CLEANUP_RULES = _PKG.parent / "rules" / "Caption_Cleanup_Rules.md"
@@ -146,6 +150,7 @@ class ClaudeCLIBackend:
                 "https://code.claude.com, then run `claude` in Terminal and "
                 "type /login.")
         self.model = model or os.environ.get("CAPTION_CLAUDE_MODEL", DEFAULT_MODEL)
+        self.effort = os.environ.get("CAPTION_CLAUDE_EFFORT", DEFAULT_EFFORT)
         self.timeout = timeout
         self.progress = progress or (lambda msg: print(msg))
         self._cleanup_rules_text = (
@@ -171,45 +176,82 @@ class ClaudeCLIBackend:
             return self._ask_once(prompt_file, user, schema)
 
     def _ask_once(self, prompt_file: str, user: str, schema: dict | None) -> dict:
+        """One judgment, done the way the caption-cleanup skill does it.
+
+        The cues go into a file and Claude is asked to read it and write its
+        judgment back as a file, with Read and Write available in an otherwise
+        empty temp folder. Inlining the cues and demanding one JSON reply --
+        which is what this did before -- cannot carry a full lecture: on a
+        271-entry file the reply petered out after a couple of entries, where
+        the skill's per-file agent produced 96 corrections on the same input.
+        Writing to a file lets the model work through every entry instead of
+        fitting them all into one answer.
+        """
         with tempfile.TemporaryDirectory(prefix="caption-claude-") as tmp:
-            sys_file = Path(tmp) / "system.md"
+            tmpdir = Path(tmp)
+            sys_file = tmpdir / "system.md"
             sys_file.write_text(self._system_for(prompt_file), encoding="utf-8")
+            cues_file = tmpdir / "cues.txt"
+            cues_file.write_text(user, encoding="utf-8")
+            out_file = tmpdir / "judgment.json"
+
+            instruction = (
+                f"Read {cues_file.name}. It holds every caption entry for one file.\n\n"
+                "Apply the rules in your system prompt to EVERY entry in it, first "
+                "to last. Working only the opening entries is the most common way "
+                "to get this wrong: a long file normally yields dozens of "
+                "corrections spread across its whole length.\n\n"
+                f"Write your judgment as a single JSON object to {out_file.name}, "
+                "in the shape your system prompt specifies. Do not put the JSON in "
+                "your reply; the file is the output. When you are done, reply with "
+                "nothing but a one-line count, e.g. DONE: 96 corrections, 18 flags."
+            )
+
             cmd = [self.claude, "-p",
                    "--output-format", "json",
                    "--model", self.model,
                    "--system-prompt-file", str(sys_file),
-                   "--tools", "",
+                   # Read and Write only, in a temp folder holding nothing but
+                   # this file's cues. --restricted also drops the
+                   # command-running tools and ignores user/project settings,
+                   # so the run does not vary with local configuration.
+                   "--tools", "Read,Write",
+                   "--effort", self.effort,
+                   "--permission-mode", "acceptEdits",
+                   "--restricted",
                    "--strict-mcp-config",
                    "--disable-slash-commands",
                    "--no-session-persistence"]
-            if schema:
-                cmd += ["--json-schema", json.dumps(schema)]
             try:
-                r = subprocess.run(cmd, input=user, capture_output=True,
+                r = subprocess.run(cmd, input=instruction, capture_output=True,
                                    text=True, timeout=self.timeout, cwd=tmp,
                                    env=_child_env())
             except subprocess.TimeoutExpired:
                 raise ClaudeCLIError(
                     f"Claude Code did not answer within {self.timeout}s.")
-        out = (r.stdout or "").strip()
+
+            out = (r.stdout or "").strip()
+            try:
+                envelope = json.loads(out)
+            except json.JSONDecodeError:
+                envelope = {}
+            result = envelope.get("result", out)
+            if envelope.get("is_error") or r.returncode != 0:
+                raise ClaudeCLIError(
+                    "Claude Code reported an error: "
+                    f"{str(result or envelope.get('subtype') or r.stderr)[:600]}")
+
+            # The file is the output. Fall back to the reply only if it never
+            # got written, so an older-style answer still works.
+            if out_file.exists():
+                raw = out_file.read_text(encoding="utf-8")
+            else:
+                raw = str(result)
+
         try:
-            envelope = json.loads(out)
-        except json.JSONDecodeError:
-            raise ClaudeCLIError(
-                "Claude Code returned an unexpected reply "
-                f"(exit {r.returncode}):\n{(out or r.stderr)[:600]}")
-        result = envelope.get("result", "")
-        if envelope.get("is_error") or r.returncode != 0:
-            raise ClaudeCLIError(
-                "Claude Code reported an error: "
-                f"{str(result or envelope.get('subtype') or r.stderr)[:600]}")
-        structured = envelope.get("structured_output")
-        if isinstance(structured, dict):
-            return structured
-        try:
-            return _extract_json(result)
+            return _extract_json(raw)
         except (APIBackendError, json.JSONDecodeError) as e:
-            saved = _save_reply(str(result))
+            saved = _save_reply(raw)
             err = ClaudeCLIError(
                 "The AI's reply could not be read as JSON, even after asking twice. "
                 "Nothing was changed; your caption file is still in Raw_Captions, "
@@ -217,6 +259,75 @@ class ClaudeCLIBackend:
                 + (f" (The reply was saved to {saved} for troubleshooting.)" if saved else ""))
             err.retryable = True
             raise err from e
+
+    # -- Per-file judgment, as the caption-cleanup skill runs it -----------
+
+    def judge_file(self, cues_path: Path, out_path: Path) -> tuple[int, int]:
+        """Review ONE caption file: read its cues, write its judgment JSON.
+
+        This mirrors step 4 of the caption-cleanup skill -- one agent per file,
+        reading its own cues with a tool and writing its own judgment with a
+        tool. The agent never sees another file, which is what keeps a long
+        lecture from being skimmed. Returns (corrections, flags).
+        """
+        with tempfile.TemporaryDirectory(prefix="caption-claude-") as tmp:
+            sys_file = Path(tmp) / "system.md"
+            sys_file.write_text(self._system_for("corrections.md"), encoding="utf-8")
+
+            instruction = (
+                f"Read {cues_path.name}. It holds every caption entry for one "
+                "lecture.\n\n"
+                "Apply the rules in your system prompt to EVERY entry, first to "
+                "last. Two passes are required over the whole file and are the "
+                "most commonly missed:\n"
+                "  1. Sentence continuation: for each adjacent pair, decide "
+                "whether the sentence carries across the entry break. If it "
+                "does, fix the terminal punctuation and lowercase the "
+                "continuing word unless it is a proper noun.\n"
+                "  2. Capitalization: lowercase common nouns that the "
+                "auto-captioner capitalized mid-sentence, and keep proper nouns "
+                "and case names consistent throughout the file.\n\n"
+                "A lecture-length file normally yields dozens of corrections "
+                "spread over its whole length, not a handful near the start.\n\n"
+                f"Write the judgment as one JSON object to {out_path.name}, in "
+                "the shape your system prompt specifies. The file is the output "
+                "-- do not put the JSON in your reply. Finish by replying with "
+                "only a count line: DONE: <n> corrections, <n> flags."
+            )
+
+            cmd = [self.claude, "-p",
+                   "--output-format", "json",
+                   "--model", self.model,
+                   "--effort", self.effort,
+                   "--system-prompt-file", str(sys_file),
+                   "--tools", "Read,Write",
+                   "--permission-mode", "acceptEdits",
+                   "--restricted",
+                   "--strict-mcp-config",
+                   "--disable-slash-commands",
+                   "--no-session-persistence"]
+            try:
+                r = subprocess.run(cmd, input=instruction, capture_output=True,
+                                   text=True, timeout=self.timeout,
+                                   cwd=str(cues_path.parent), env=_child_env())
+            except subprocess.TimeoutExpired:
+                raise ClaudeCLIError(
+                    f"{cues_path.name}: no answer within {self.timeout}s.")
+
+        if not out_path.exists():
+            detail = (r.stdout or r.stderr or "")[:400]
+            raise ClaudeCLIError(
+                f"{cues_path.name}: the reviewer wrote no judgment file. {detail}")
+        try:
+            data = _extract_json(out_path.read_text(encoding="utf-8"))
+        except (APIBackendError, json.JSONDecodeError) as e:
+            raise ClaudeCLIError(
+                f"{cues_path.name}: the judgment file was not valid JSON.") from e
+        # Normalize so apply-judgment always finds both keys.
+        data.setdefault("corrections", [])
+        data.setdefault("flags", [])
+        out_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return len(data["corrections"]), len(data["flags"])
 
     # -- JudgmentBackend ----------------------------------------------------
 

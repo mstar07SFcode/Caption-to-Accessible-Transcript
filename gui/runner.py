@@ -14,8 +14,10 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import shutil
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +27,12 @@ from pipeline.flaglog import editable_possible, parse_flaglog, write_flaglog, RU
 
 SUBFOLDERS = ("Raw_Captions", "Edited_Captions", "Archived_Captions",
               "VTT_Files", "HTML_Transcripts", "Word_Transcripts")
+
+# Scratch folder for the judgment stage, created and removed per run.
+JUDGMENT_DIR = ".judgment"
+# How many files are reviewed at once. The skill launches every agent in
+# parallel; a cap keeps a 40-lecture batch from opening 40 at once.
+MAX_PARALLEL_REVIEWS = 4
 
 
 # --- Jobs ------------------------------------------------------------------
@@ -131,6 +139,9 @@ def _backend_for(use_ai: bool, engine: str) -> str:
 def run_clean(wf: Path, course: str, speaker: str, use_ai: bool,
               use_batch: bool = False, engine: str = "claude") -> None:
     ensure_folders(wf)
+    if use_ai and engine == "claude":
+        _clean_with_agents(wf, course, speaker)
+        return
     batch.cmd_clean(SimpleNamespace(
         raw=str(wf / "Raw_Captions"),
         out=str(wf / "Edited_Captions"),
@@ -144,6 +155,89 @@ def run_clean(wf: Path, course: str, speaker: str, use_ai: bool,
         emit_prompts=None,
         no_archive=False,
     ))
+
+
+def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
+    """Clean the way the caption-cleanup skill does, in three stages.
+
+    1. A deterministic pass writes the baseline VTTs and one <stem>.cues.txt
+       per file. No AI yet.
+    2. One reviewer per file, in parallel, each reading only its own cues and
+       writing its own <stem>.judgment.json.
+    3. apply-judgment folds those judgments into the VTTs and flag logs.
+
+    Handing the whole batch to a single call instead -- which is what the
+    judgment backend used to do -- produced a few corrections at the start of
+    a lecture and nothing after, however the call was shaped. One reviewer per
+    file is the part that matters, so the GUI runs the skill's sequence rather
+    than its own.
+    """
+    from pipeline.claude_cli_backend import ClaudeCLIBackend, ClaudeCLIError
+
+    jdir = wf / JUDGMENT_DIR
+    shutil.rmtree(jdir, ignore_errors=True)
+
+    # Stage 1 — deterministic, no AI.
+    batch.cmd_clean(SimpleNamespace(
+        raw=str(wf / "Raw_Captions"),
+        out=str(wf / "Edited_Captions"),
+        archive=str(wf / "Archived_Captions"),
+        course=course or None,
+        speaker=speaker or None,
+        backend="stub",
+        model=None,
+        batch=False,
+        judgment_dir=None,
+        emit_prompts=str(jdir),
+        no_archive=False,
+    ))
+
+    cues_files = sorted(jdir.glob("*.cues.txt"))
+    if not cues_files:
+        shutil.rmtree(jdir, ignore_errors=True)
+        return
+
+    # Stage 2 — one reviewer per file.
+    n = len(cues_files)
+    print(f"\nReviewing {n} file(s) with Claude — one reviewer each, "
+          f"up to {MAX_PARALLEL_REVIEWS} at a time. This is the slow part.")
+    backend = ClaudeCLIBackend()
+    judged = 0
+    failures: list[str] = []
+
+    def review(cues_path: Path):
+        stem = cues_path.name[: -len(".cues.txt")]
+        return cues_path, backend.judge_file(cues_path, jdir / f"{stem}.judgment.json")
+
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REVIEWS) as pool:
+        futures = [pool.submit(review, c) for c in cues_files]
+        for fut in as_completed(futures):
+            try:
+                cues_path, (ncorr, nflag) = fut.result()
+                judged += 1
+                stem = cues_path.name[: -len(".cues.txt")]
+                print(f"  [{judged}/{n}] {stem} — {ncorr} correction(s), "
+                      f"{nflag} flag(s)")
+            except ClaudeCLIError as e:
+                failures.append(str(e))
+                print(f"  ERROR: {e}")
+
+    if failures and not judged:
+        shutil.rmtree(jdir, ignore_errors=True)
+        raise ClaudeCLIError(
+            "No file could be reviewed. Your captions are cleaned but "
+            "unreviewed in Edited_Captions; run Clean again to retry.")
+
+    # Stage 3 — fold the judgments in. Files without one keep the baseline.
+    print()
+    batch.cmd_apply_judgment(SimpleNamespace(
+        edited=str(wf / "Edited_Captions"),
+        judgment_dir=str(jdir),
+    ))
+    shutil.rmtree(jdir, ignore_errors=True)
+    if failures:
+        print(f"\nWARNING: {len(failures)} file(s) could not be reviewed and "
+              f"were left as the plain deterministic clean.")
 
 
 def run_apply_flaglog(wf: Path) -> None:

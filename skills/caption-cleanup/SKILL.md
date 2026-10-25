@@ -74,12 +74,6 @@ user's working folder.
    for review. Tell the user to review the `FlagLog_*.txt` files, then run the
    Apply Flag Log skill (step 1b) or go straight to Transcript Publish.
 
-## Alternative: no Claude judgment available
-
-If running outside Claude (or to skip the per-file judgment), the pipeline can
-call the Anthropic API directly — add `--backend api` (with `ANTHROPIC_API_KEY`
-set) to the `clean` command and skip steps 4–5. See the repo README.
-
 ## Output naming
 
 VTT: `[Course_][Module_]Name.vtt` (no prefix, no date). Flag log:
