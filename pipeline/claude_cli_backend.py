@@ -274,24 +274,24 @@ class ClaudeCLIBackend:
             sys_file = Path(tmp) / "system.md"
             sys_file.write_text(self._system_for("corrections.md"), encoding="utf-8")
 
+            # Deliberately does NOT enumerate particular rules. An earlier
+            # version named the two sweeps most often missed; the reviewer
+            # then did those two well and skipped others the rules require,
+            # hyphenation among them -- 52 corrections where a version that
+            # just said "apply all of them" found 104 on the same lecture.
             instruction = (
                 f"Read {cues_path.name}. It holds every caption entry for one "
                 "lecture.\n\n"
-                "Apply the rules in your system prompt to EVERY entry, first to "
-                "last. Two passes are required over the whole file and are the "
-                "most commonly missed:\n"
-                "  1. Sentence continuation: for each adjacent pair, decide "
-                "whether the sentence carries across the entry break. If it "
-                "does, fix the terminal punctuation and lowercase the "
-                "continuing word unless it is a proper noun.\n"
-                "  2. Capitalization: lowercase common nouns that the "
-                "auto-captioner capitalized mid-sentence, and keep proper nouns "
-                "and case names consistent throughout the file.\n\n"
-                "A lecture-length file normally yields dozens of corrections "
-                "spread over its whole length, not a handful near the start.\n\n"
+                "Your system prompt contains the complete cleanup rules. Apply "
+                "ALL of them to EVERY entry, first to last — not a selection of "
+                "the rules, and not only the opening entries. Work through the "
+                "file systematically; a lecture-length file normally yields "
+                "dozens of corrections spread over its whole length.\n\n"
+                "Correct at 90% confidence or higher. Anything less certain is a "
+                "flag for the reviewer, not a guess.\n\n"
                 f"Write the judgment as one JSON object to {out_path.name}, in "
                 "the shape your system prompt specifies. The file is the output "
-                "-- do not put the JSON in your reply. Finish by replying with "
+                "— do not put the JSON in your reply. Finish by replying with "
                 "only a count line: DONE: <n> corrections, <n> flags."
             )
 
