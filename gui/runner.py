@@ -163,36 +163,26 @@ def run_publish(wf: Path, ai_headings: bool, delete_working: bool,
                 fmt: str = "html") -> None:
     """Publish the edited captions as a web page, a Word document, or both.
 
-    This repo's cmd_publish renders ONE format per run and writes it to the
-    directory it calls --html, so "both" is two runs rather than a --format
-    both flag. That is safe because publishing is not destructive: it copies
-    each VTT forward into VTT_Files and leaves Edited_Captions alone, so the
-    second run still finds its input. Only --delete-working removes anything,
-    so it is held back for the final run.
+    One cmd_publish call whatever the format: with fmt="both" it renders each
+    transcript twice from a single judgment, so ticking both boxes with AI
+    headings on costs one AI pass, not two.
     """
     ensure_folders(wf)
-    runs = []
-    if fmt in ("html", "both"):
-        runs.append(("html", wf / "HTML_Transcripts"))
-    if fmt in ("docx", "both"):
-        runs.append(("docx", wf / "Word_Transcripts"))
-
-    for i, (out_format, outdir) in enumerate(runs):
-        is_last = i == len(runs) - 1
-        batch.cmd_publish(SimpleNamespace(
-            edited=str(wf / "Edited_Captions"),
-            vttout=str(wf / "VTT_Files"),
-            html=str(outdir),          # cmd_publish writes this format here
-            format=out_format,
-            archive=str(wf / "Archived_Captions"),
-            backend=_backend_for(ai_headings, engine),
-            model=None,
-            batch=bool(use_batch) and engine == "api",
-            judgment_dir=None,
-            title_map=None,
-            speaker_map=None,
-            delete_working=bool(delete_working) and is_last,
-        ))
+    batch.cmd_publish(SimpleNamespace(
+        edited=str(wf / "Edited_Captions"),
+        vttout=str(wf / "VTT_Files"),
+        html=str(wf / "HTML_Transcripts"),
+        docx=str(wf / "Word_Transcripts"),
+        format=fmt,
+        archive=str(wf / "Archived_Captions"),
+        backend=_backend_for(ai_headings, engine),
+        model=None,
+        batch=bool(use_batch) and engine == "api",
+        judgment_dir=None,
+        title_map=None,
+        speaker_map=None,
+        delete_working=bool(delete_working),
+    ))
 
 
 # --- Folder status ---------------------------------------------------------
