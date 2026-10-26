@@ -41,7 +41,15 @@ from .parse import Cue
 # "642(h)", "fact base case" left where the skill wrote "fact-based".
 # Opus fixes both and punctuates better besides. Override per run with
 # CAPTION_CLAUDE_MODEL.
-DEFAULT_MODEL = "opus"            # Claude Code model alias
+# Pinned to an exact model, not the "opus" alias: the alias follows the
+# latest Opus, so an upgrade would silently change what the reviewer does
+# to a set of captions. Override per run with CAPTION_CLAUDE_MODEL.
+DEFAULT_MODEL = "claude-opus-5-5"
+# "replace" swaps out Claude Code's own system prompt for the rules;
+# "append" keeps the default and adds the rules to it, which is closer to
+# how the caption-cleanup skill's sub-agents run. Switch with
+# CAPTION_CLAUDE_SYSTEM_MODE to A/B the two.
+DEFAULT_SYSTEM_MODE = "replace"
 DEFAULT_EFFORT = "high"           # the continuation/capitalization sweep
                                   # is methodical work over every adjacent
                                   # pair; at default effort the model finds
@@ -132,6 +140,36 @@ def _apply_to_cue_text(text: str, corrections: list[dict]) -> str:
     return "\n".join(f"{i}\t{by[i]}" for i, _ in entries)
 
 
+# Pass 2 does one job -- the adjacent-pair sweep -- so it gets only the rules
+# bearing on that decision. The full file is ~28KB, of which these sections are
+# about 5KB; the rest (filler removal, entry numbering, proper nouns, citations)
+# is not just wasted tokens but competing instructions for a reviewer that
+# should be looking at one thing.
+PASS2_SECTIONS = (
+    "## Correction Confidence Framework",
+    "### Rule 1 — Correct Punctuation",
+    "### Rule 1b — Capitalization of Common Nouns",
+    "## Sentence Continuation Across Entries",
+)
+
+
+def _select_sections(markdown: str, wanted: tuple[str, ...]) -> str:
+    """Return only the named sections. A ## section keeps its ### children."""
+    out: list[str] = []
+    keep, depth = False, 0
+    for line in markdown.split("\n"):
+        m = re.match(r"^(#{2,3}) ", line)
+        if m:
+            level = len(m.group(1))
+            if line.strip() in wanted:
+                keep, depth = True, level
+            elif keep and level <= depth:
+                keep = False
+        if keep:
+            out.append(line)
+    return "\n".join(out).strip()
+
+
 def find_claude() -> str | None:
     """Return the path to the `claude` command, or None if not installed."""
     found = shutil.which("claude")
@@ -192,6 +230,8 @@ class ClaudeCLIBackend:
                 "type /login.")
         self.model = model or os.environ.get("CAPTION_CLAUDE_MODEL", DEFAULT_MODEL)
         self.effort = os.environ.get("CAPTION_CLAUDE_EFFORT", DEFAULT_EFFORT)
+        self.system_mode = os.environ.get("CAPTION_CLAUDE_SYSTEM_MODE",
+                                          DEFAULT_SYSTEM_MODE)
         self.timeout = timeout
         self.progress = progress or (lambda msg: print(msg))
         self._cleanup_rules_text = (
@@ -199,9 +239,9 @@ class ClaudeCLIBackend:
         self._publish_rules_text = (
             _PUBLISH_RULES.read_text(encoding="utf-8") if _PUBLISH_RULES.exists() else "")
 
-    def _system_for(self, prompt_file: str) -> str:
+    def _system_for(self, prompt_file: str, rules: str | None = None) -> str:
         tmpl = (_PROMPTS / prompt_file).read_text(encoding="utf-8")
-        tmpl = tmpl.replace("{RULES}", self._cleanup_rules_text)
+        tmpl = tmpl.replace("{RULES}", self._cleanup_rules_text if rules is None else rules)
         tmpl = tmpl.replace("{PUBLISH_RULES}", self._publish_rules_text)
         return tmpl + ("\n\nReply with the JSON object only - no prose, "
                        "no code fences.")
@@ -251,7 +291,9 @@ class ClaudeCLIBackend:
             cmd = [self.claude, "-p",
                    "--output-format", "json",
                    "--model", self.model,
-                   "--system-prompt-file", str(sys_file),
+                   ("--append-system-prompt-file"
+                    if self.system_mode == "append" else "--system-prompt-file"),
+                   str(sys_file),
                    # Read and Write only, in a temp folder holding nothing but
                    # this file's cues. --restricted also drops the
                    # command-running tools and ignores user/project settings,
@@ -304,16 +346,19 @@ class ClaudeCLIBackend:
     # -- Per-file judgment, as the caption-cleanup skill runs it -----------
 
     def _review(self, workdir: Path, read_name: str, write_name: str,
-                instruction: str) -> dict:
+                instruction: str, rules: str | None = None) -> dict:
         """Run one reviewer turn in workdir; return the JSON it wrote."""
         with tempfile.TemporaryDirectory(prefix="caption-claude-") as tmp:
             sys_file = Path(tmp) / "system.md"
-            sys_file.write_text(self._system_for("corrections.md"), encoding="utf-8")
+            sys_file.write_text(self._system_for("corrections.md", rules),
+                                encoding="utf-8")
             cmd = [self.claude, "-p",
                    "--output-format", "json",
                    "--model", self.model,
                    "--effort", self.effort,
-                   "--system-prompt-file", str(sys_file),
+                   ("--append-system-prompt-file"
+                    if self.system_mode == "append" else "--system-prompt-file"),
+                   str(sys_file),
                    "--tools", "Read,Write",
                    "--permission-mode", "acceptEdits",
                    "--restricted",
@@ -406,7 +451,8 @@ class ClaudeCLIBackend:
                 "handled. Each correction's `find` must appear verbatim in the "
                 "entry you name, as the text now reads.\n\n"
                 f"Write them as one JSON object to {pass2_out}, same shape. The "
-                "file is the output. Finish with only: DONE: <n> corrections.")
+                "file is the output. Finish with only: DONE: <n> corrections.",
+                rules=_select_sections(self._cleanup_rules_text, PASS2_SECTIONS))
         except ClaudeCLIError as e:
             # The sweep is an improvement, not a precondition — keep pass 1.
             self.progress(f"  (second pass skipped: {e})")

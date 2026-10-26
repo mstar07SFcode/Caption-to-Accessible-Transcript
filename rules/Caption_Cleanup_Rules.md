@@ -137,6 +137,53 @@ Delete the following without replacement:
 **Do NOT remove** the following — preserve verbatim as spoken:
 - *so, you know, I mean, right, well* — even when used as openers or fillers. These are part of the speaker's natural voice and must be kept.
 
+### Rule 2c — Numbers
+
+**Broken numbers — correct when context confirms them.** Auto-captioners often split a number spoken in groups: words mixed with digits (*"seven, 57"*), a stray comma inside a number (*"7, 57"*), or one number split across two cues. Check the nearby entries (about 5 either side). If they confirm the value — a stated starting value and change, a total, or the same number repeated — correct it to one number in digits.
+
+```
+Entry 38: "...atmospheric pressure is about 760 millimeters of mercury."
+Entry 39: "...we are decreasing that pressure ... by three millimeters of mercury."
+Entry 40: "We're down to seven, 57 millimeters of mercury."
+  ✓ Correction on entry 40: "seven, 57" → "757"   (760 − 3 = 757)
+```
+
+**Broken numbers — flag when context only suggests a value.** Put the proposed number in `Possible`.
+
+**Check the math in a series.** When the speaker gives related numbers (start, change, result, or a list that adds to a total) and a captioned number doesn't fit, **flag** that number rather than correcting it — the speaker may have misspoken. Put the flag on the entry that contains the number, not on a neighbouring entry.
+
+**Flag a figure that cannot be a number.** A captioned figure that no one could have said — digit groups run together, two decimal points, a comma-grouped number followed by a magnitude word — is a recognition failure, not a quantity. Flag it; do not guess at the value.
+
+```
+"The executor paid 27,000,027.5 million to wife"
+  ✗ Do not correct to a guessed figure
+  ✓ Flag entry — Found: "27,000,027.5 million"
+                 Issue: impossible figure; 27,000,027.5 million is not a quantity
+                 Possible: "Listen to verify"
+```
+
+**Do not flag numbers just to confirm them.**
+
+### Rule 2d — Statutory and Regulatory Citations
+
+Section and subsection references are **written** in their standard form, not transcribed as the letter sounds. A letter spoken after a section number is a subsection and takes parentheses and lower case. This is formatting, not a change of meaning — the words the speaker said are unchanged.
+
+| Spoken / as captioned | Write |
+|---|---|
+| `642 H`, `642 aitch` | `642(h)` |
+| `642, see` / `642 C` / `642 sea` | `642(c)` |
+| `section one E` | `section 1(e)` |
+| `643 ee` | `643(e)` |
+| `641 ay` / `641 eh` | `641(a)` |
+| `652 be` / `652 bee` | `652(b)` |
+| `1.662 C4` / `1.662 see four` | `1.662(c)-4` |
+
+**The "see" trap.** The letter *c* spoken aloud is the word *see*. After a section number it is nearly always a subsection, not a verb — `"under 642, see if there is..."` is almost certainly `"under 642(c). If there is..."`. Read the rest of the sentence: if *see* has no object and the number precedes it, it is a subsection.
+
+**Do not invent a subsection.** Only write one where a letter was actually spoken. A bare `section 642` stays `section 642`.
+
+**An unfamiliar case or statute name is a flag, not a repair.** Where a citation is garbled beyond the pattern above, flag it with the text as captioned — do not substitute `[unintelligible]` for a name that may be real.
+
 ### Rule 3 — Never Insert Words; Do Restore Misrecognized Words
 
 **Never use square brackets, and never insert a word that the speaker did not say.** But distinguish two situations that look similar:
@@ -225,7 +272,6 @@ recover the name. Anyone with the audio still can, so record the decision in
 | Use [sic] in caption files — or in published transcripts | ✗ Never (Publish Rule 3) |
 
 ### Rule 5 — Do Not Alter Meaning
-- Preserve all technical terms, proper nouns, and legal citations exactly as spoken
 - When genuinely uncertain, keep the original and flag it
 
 ### Rule 6 — Preserve Entry Numbers and Timecodes
