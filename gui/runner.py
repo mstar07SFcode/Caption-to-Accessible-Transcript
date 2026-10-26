@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from pipeline import batch, naming
+from pipeline import batch, files as F, naming
 from pipeline.flaglog import editable_possible, parse_flaglog, write_flaglog, RULE
 
 SUBFOLDERS = ("Raw_Captions", "Edited_Captions", "Archived_Captions",
@@ -214,6 +214,14 @@ def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
     # where that IS the whole job, but here it announces completion at the
     # one-third mark and reads as a finished result with nothing found.
     # Swallow it and report the stage instead.
+    # The sources are archived only once the whole three-stage run has
+    # succeeded. Stage 1 used to move them itself, which emptied
+    # Raw_Captions seconds after the click while the review — the part that
+    # does the real work — had not started, and left nothing to re-run from
+    # if a later stage failed.
+    raw_root = wf / "Raw_Captions"
+    sources = F.scan_sources(raw_root)
+
     print("Step 1 of 3 — preparing captions")
     staged = io.StringIO()
     with contextlib.redirect_stdout(staged):
@@ -228,7 +236,7 @@ def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
             batch=False,
             judgment_dir=None,
             emit_prompts=str(jdir),
-            no_archive=False,
+            no_archive=True,
         ))
     # Warnings (duplicate names, unreadable files) still matter to the user.
     for line in staged.getvalue().splitlines():
@@ -296,6 +304,14 @@ def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
     if failures:
         print(f"WARNING: {len(failures)} file(s) could not be reviewed and "
               f"were left as the plain deterministic clean.")
+        print("  Your originals stay in Raw_Captions so you can run Clean "
+              "again; the unreviewed results are in Edited_Captions.")
+        return
+
+    for src in sources:
+        if src.exists():
+            F.archive_source(src, raw_root, wf / "Archived_Captions")
+    F.prune_empty_dirs(raw_root)
 
 
 def run_apply_flaglog(wf: Path) -> None:
