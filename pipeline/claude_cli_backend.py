@@ -28,10 +28,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 from .api_backend import _extract_json, APIBackendError
-from .judgment import CleanupJudgment, PublishJudgment, cues_as_prompt_text
+from .judgment import (CleanupJudgment, PublishJudgment, cues_as_prompt_text,
+                       PASS2_SECTIONS, _apply_to_cue_text, _select_sections)
 from .parse import Cue
 
 # The skill runs its judgment as sub-agents inside a Claude Code session,
@@ -113,69 +115,6 @@ def _save_reply(text: str) -> str:
         return str(_LAST_REPLY)
     except OSError:
         return ""
-
-
-# --- cues prompt file (index<TAB>text; a cue's text may itself wrap) --------
-
-_CUE_LINE_RE = re.compile(r"^(\d+)\t(.*)$")
-
-
-def _parse_cue_text(text: str) -> list[tuple[int, str]]:
-    entries: list[tuple[int, str]] = []
-    idx, buf = None, []
-    for line in text.split("\n"):
-        m = _CUE_LINE_RE.match(line)
-        if m:
-            if idx is not None:
-                entries.append((idx, "\n".join(buf)))
-            idx, buf = int(m.group(1)), [m.group(2)]
-        elif idx is not None:
-            buf.append(line)
-    if idx is not None:
-        entries.append((idx, "\n".join(buf)))
-    return entries
-
-
-def _apply_to_cue_text(text: str, corrections: list[dict]) -> str:
-    """Fold a pass's corrections into the cues text, so the next pass reads
-    what the file will actually say rather than the original."""
-    entries = _parse_cue_text(text)
-    by = dict(entries)
-    for c in corrections:
-        e, f, r = c.get("entry"), c.get("find"), c.get("replace")
-        if e in by and f and r is not None and f in by[e]:
-            by[e] = by[e].replace(f, r, 1)
-    return "\n".join(f"{i}\t{by[i]}" for i, _ in entries)
-
-
-# Pass 2 does one job -- the adjacent-pair sweep -- so it gets only the rules
-# bearing on that decision. The full file is ~28KB, of which these sections are
-# about 5KB; the rest (filler removal, entry numbering, proper nouns, citations)
-# is not just wasted tokens but competing instructions for a reviewer that
-# should be looking at one thing.
-PASS2_SECTIONS = (
-    "## Correction Confidence Framework",
-    "### Rule 1 — Correct Punctuation",
-    "### Rule 1b — Capitalization of Common Nouns",
-    "## Sentence Continuation Across Entries",
-)
-
-
-def _select_sections(markdown: str, wanted: tuple[str, ...]) -> str:
-    """Return only the named sections. A ## section keeps its ### children."""
-    out: list[str] = []
-    keep, depth = False, 0
-    for line in markdown.split("\n"):
-        m = re.match(r"^(#{2,3}) ", line)
-        if m:
-            level = len(m.group(1))
-            if line.strip() in wanted:
-                keep, depth = True, level
-            elif keep and level <= depth:
-                keep = False
-        if keep:
-            out.append(line)
-    return "\n".join(out).strip()
 
 
 def find_claude() -> str | None:
@@ -354,8 +293,14 @@ class ClaudeCLIBackend:
     # -- Per-file judgment, as the caption-cleanup skill runs it -----------
 
     def _review(self, workdir: Path, read_name: str, write_name: str,
-                instruction: str, rules: str | None = None) -> dict:
-        """Run one reviewer turn in workdir; return the JSON it wrote."""
+                instruction: str, rules: str | None = None,
+                session_id: str | None = None, resume: bool = False) -> dict:
+        """Run one reviewer turn in workdir; return the JSON it wrote.
+
+        session_id names the conversation so the second pass can --resume it
+        and inherit what the first pass decided, instead of re-reading the
+        captions cold with no idea which lines it already changed.
+        """
         with tempfile.TemporaryDirectory(prefix="caption-claude-") as tmp:
             sys_file = Path(tmp) / "system.md"
             sys_file.write_text(self._system_for("corrections.md", rules),
@@ -367,12 +312,27 @@ class ClaudeCLIBackend:
                    ("--append-system-prompt-file"
                     if self.system_mode == "append" else "--system-prompt-file"),
                    str(sys_file),
-                   "--tools", "Read,Write",
+                   # Grep and Glob are read-only. --restricted removes the
+                   # command-running tools, so the reviewer cannot reach a
+                   # shell whatever it is asked -- the guarantee that makes
+                   # this safe to run unattended on someone else's machine.
+                   # Grep is what lets it check how a case name is rendered
+                   # elsewhere in the file instead of holding 600 cues in
+                   # its head; name consistency is the largest correction
+                   # category in this material.
+                   "--tools", "Read,Grep,Glob,Write",
                    "--permission-mode", "acceptEdits",
                    "--restricted",
                    "--strict-mcp-config",
-                   "--disable-slash-commands",
-                   "--no-session-persistence"]
+                   "--disable-slash-commands"]
+            if session_id and resume:
+                # --session-id and --resume are mutually exclusive unless
+                # --fork-session is given; resuming just names the session.
+                cmd += ["--resume", session_id]
+            elif session_id:
+                cmd += ["--session-id", session_id]
+            else:
+                cmd += ["--no-session-persistence"]
             try:
                 r = subprocess.run(cmd, input=instruction, capture_output=True,
                                    text=True, timeout=self.timeout,
@@ -412,6 +372,7 @@ class ClaudeCLIBackend:
         # Several reviewers run at once, so every line names its file.
         self.progress(f"     {label}: pass 1 of 2 — reviewing the whole file")
 
+        session = str(uuid.uuid4())
         first = self._review(
             workdir, cues_path.name, out_path.name,
             f"Read {cues_path.name}. It holds every caption entry for one "
@@ -427,7 +388,8 @@ class ClaudeCLIBackend:
             f"Write the judgment as one JSON object to {out_path.name}, in the "
             "shape your system prompt specifies. The file is the output — do "
             "not put the JSON in your reply. Finish with only a count line: "
-            "DONE: <n> corrections, <n> flags.")
+            "DONE: <n> corrections, <n> flags.",
+            session_id=session)
 
         self.progress(f"     {label}: pass 1 found {len(first['corrections'])} "
                       f"correction(s), {len(first['flags'])} flag(s) — "
@@ -460,7 +422,8 @@ class ClaudeCLIBackend:
                 "entry you name, as the text now reads.\n\n"
                 f"Write them as one JSON object to {pass2_out}, same shape. The "
                 "file is the output. Finish with only: DONE: <n> corrections.",
-                rules=_select_sections(self._cleanup_rules_text, PASS2_SECTIONS))
+                rules=_select_sections(self._cleanup_rules_text, PASS2_SECTIONS),
+                session_id=session, resume=True)
         except ClaudeCLIError as e:
             # The sweep is an improvement, not a precondition — keep pass 1.
             self.progress(f"  (second pass skipped: {e})")

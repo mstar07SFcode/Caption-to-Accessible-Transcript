@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import re
 from pathlib import Path
 
-from .judgment import CleanupJudgment, PublishJudgment, cues_as_prompt_text
+from .judgment import (CleanupJudgment, PublishJudgment, cues_as_prompt_text,
+                       PASS2_SECTIONS, _apply_to_cue_text, _select_sections)
 from .parse import Cue
 
 DEFAULT_MODEL = "claude-sonnet-5"
@@ -75,19 +77,19 @@ class APIBackend:
 
     # -- prompt assembly ----------------------------------------------------
 
-    def _system_for(self, prompt_file: str) -> str:
+    def _system_for(self, prompt_file: str, rules: str | None = None) -> str:
         tmpl = (_PROMPTS / prompt_file).read_text(encoding="utf-8")
-        tmpl = tmpl.replace("{RULES}", self._cleanup_rules_text)
+        tmpl = tmpl.replace("{RULES}", self._cleanup_rules_text if rules is None else rules)
         return tmpl.replace("{PUBLISH_RULES}", self._publish_rules_text)
 
-    def _system_blocks(self, prompt_file: str) -> list[dict]:
+    def _system_blocks(self, prompt_file: str, rules: str | None = None) -> list[dict]:
         """System prompt as a cacheable content block.
 
         cache_control:ephemeral lets the (identical, ~5k-token) rules+prompt be
         reused across files in a run, billing the cached read at ~10% of input.
         Blocks below the cache minimum (~1k tokens) are simply not cached.
         """
-        return [{"type": "text", "text": self._system_for(prompt_file),
+        return [{"type": "text", "text": self._system_for(prompt_file, rules),
                  "cache_control": {"type": "ephemeral"}}]
 
     def _params(self, system_blocks: list[dict], user: str) -> dict:
@@ -103,10 +105,60 @@ class APIBackend:
     # -- JudgmentBackend (synchronous, one call per file) -------------------
 
     def cleanup(self, cues: list[Cue], context: dict) -> CleanupJudgment:
+        """Two passes, matching what the Claude-plan backend does.
+
+        An API key used to get a single call over the whole file, which on a
+        lecture-length transcript returns a handful of corrections near the
+        start. The second pass re-reads the cues with pass 1's corrections
+        folded in and does only the adjacent-pair sweep, which is undecidable
+        until the other corrections land -- most continuations need their comma
+        created before anything can be lowercased.
+
+        No tools here, so unlike the CLI reviewer this one cannot grep the file
+        for how a name is rendered elsewhere. The pass structure is the same.
+        """
         if not cues:
             return CleanupJudgment()
-        user = "CUES:\n" + cues_as_prompt_text(cues)
-        return CleanupJudgment.from_json(self._ask(self._system_blocks("corrections.md"), user))
+        original = cues_as_prompt_text(cues)
+        first = self._ask(self._system_blocks("corrections.md"),
+                          "CUES:\n" + original)
+        first.setdefault("corrections", [])
+        first.setdefault("flags", [])
+
+        staged = _apply_to_cue_text(original, first["corrections"])
+        sweep_rules = _select_sections(self._cleanup_rules_text, PASS2_SECTIONS)
+        try:
+            second = self._ask(
+                self._system_blocks("corrections.md", rules=sweep_rules),
+                "These captions have already had one cleanup pass; this is "
+                "their current text.\n\n"
+                "Do ONE job: walk every adjacent pair of entries, first to "
+                "last, and decide whether the sentence carries across the "
+                "break. If it does, the earlier entry must not end with a full "
+                "stop and the next entry's first word is lowercase unless it "
+                "is a proper noun. If it does not, the earlier entry closes "
+                "and the next starts with a capital.\n\n"
+                "Report ONLY changes of this kind. Each `find` must appear "
+                "verbatim in the entry you name, as the text now reads.\n\n"
+                "CUES:\n" + staged)
+            second.setdefault("corrections", [])
+            second.setdefault("flags", [])
+        except Exception as e:
+            # The sweep is an improvement, not a precondition: keep pass 1 and
+            # say so, rather than silently returning a thinner judgment that
+            # looks like the reviewer simply found less.
+            print(f"  WARNING: the second pass failed ({type(e).__name__}: {e}); "
+                  f"keeping the first pass's corrections.", file=sys.stderr)
+            second = {"corrections": [], "flags": []}
+
+        # Pass 1 first, so pass 2's find strings match once pass 1 has applied.
+        merged = {"corrections": list(first["corrections"]) + list(second["corrections"]),
+                  "flags": list(first["flags"])}
+        seen = {(f.get("entry"), f.get("found")) for f in merged["flags"]}
+        for f in second["flags"]:
+            if (f.get("entry"), f.get("found")) not in seen:
+                merged["flags"].append(f)
+        return CleanupJudgment.from_json(merged)
 
     def publish(self, cues: list[Cue], context: dict) -> PublishJudgment:
         if not cues:

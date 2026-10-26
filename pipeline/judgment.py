@@ -185,3 +185,66 @@ def cues_as_prompt_text(cues: list[Cue]) -> str:
     """Render cues as the compact numbered text given to the LLM (text only —
     no timecodes — to minimize tokens; the pipeline rejoins by entry number)."""
     return "\n".join(f"{c.index}\t{c.text}" for c in cues)
+
+
+# --- cues prompt file (index<TAB>text; a cue's text may itself wrap) --------
+
+_CUE_LINE_RE = re.compile(r"^(\d+)\t(.*)$")
+
+
+def _parse_cue_text(text: str) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    idx, buf = None, []
+    for line in text.split("\n"):
+        m = _CUE_LINE_RE.match(line)
+        if m:
+            if idx is not None:
+                entries.append((idx, "\n".join(buf)))
+            idx, buf = int(m.group(1)), [m.group(2)]
+        elif idx is not None:
+            buf.append(line)
+    if idx is not None:
+        entries.append((idx, "\n".join(buf)))
+    return entries
+
+
+def _apply_to_cue_text(text: str, corrections: list[dict]) -> str:
+    """Fold a pass's corrections into the cues text, so the next pass reads
+    what the file will actually say rather than the original."""
+    entries = _parse_cue_text(text)
+    by = dict(entries)
+    for c in corrections:
+        e, f, r = c.get("entry"), c.get("find"), c.get("replace")
+        if e in by and f and r is not None and f in by[e]:
+            by[e] = by[e].replace(f, r, 1)
+    return "\n".join(f"{i}\t{by[i]}" for i, _ in entries)
+
+
+# Pass 2 does one job -- the adjacent-pair sweep -- so it gets only the rules
+# bearing on that decision. The full file is ~28KB, of which these sections are
+# about 5KB; the rest (filler removal, entry numbering, proper nouns, citations)
+# is not just wasted tokens but competing instructions for a reviewer that
+# should be looking at one thing.
+PASS2_SECTIONS = (
+    "## Correction Confidence Framework",
+    "### Rule 1 — Correct Punctuation",
+    "### Rule 1b — Capitalization of Common Nouns",
+    "## Sentence Continuation Across Entries",
+)
+
+
+def _select_sections(markdown: str, wanted: tuple[str, ...]) -> str:
+    """Return only the named sections. A ## section keeps its ### children."""
+    out: list[str] = []
+    keep, depth = False, 0
+    for line in markdown.split("\n"):
+        m = re.match(r"^(#{2,3}) ", line)
+        if m:
+            level = len(m.group(1))
+            if line.strip() in wanted:
+                keep, depth = True, level
+            elif keep and level <= depth:
+                keep = False
+        if keep:
+            out.append(line)
+    return "\n".join(out).strip()
