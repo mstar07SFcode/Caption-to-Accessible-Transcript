@@ -29,3 +29,6 @@ UPDATING_THE_PLUGIN.md
 
 # Word output (user data, same as the other working folders)
 Word_Transcripts/
+
+# Scratch comparison reports — local reading only
+_comparisons/

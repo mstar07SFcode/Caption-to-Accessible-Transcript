@@ -48,7 +48,15 @@ DEFAULT_MODEL = "claude-opus-5-5"
 # "replace" swaps out Claude Code's own system prompt for the rules;
 # "append" keeps the default and adds the rules to it, which is closer to
 # how the caption-cleanup skill's sub-agents run. Switch with
-# CAPTION_CLAUDE_SYSTEM_MODE to A/B the two.
+# CAPTION_CLAUDE_SYSTEM_MODE.
+#
+# Kept on "replace" by a stated preference, not by a measurement: one run each
+# had append winning on hyphenation ("fact-based") and replace winning on the
+# numbers -- it flagged an impossible figure WITH the arithmetic that fixed it
+# and proposed the value, where append only said "Listen to verify". A wrong
+# figure in a tax lecture misleads; a missing hyphen does not. The totals
+# (116 vs 100 corrections) decided nothing: three identical runs of one config
+# on that file spanned 61-95. See "To Do.md" for how to settle this properly.
 DEFAULT_SYSTEM_MODE = "replace"
 DEFAULT_EFFORT = "high"           # the continuation/capitalization sweep
                                   # is methodical work over every adjacent
