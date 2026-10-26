@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import re
 import shutil
 import threading
 import traceback
@@ -157,6 +158,37 @@ def run_clean(wf: Path, course: str, speaker: str, use_ai: bool,
     ))
 
 
+def _mark_awaiting_review(wf: Path, cues_files: list[Path]) -> None:
+    """Stamp the stage-1 flag logs as not final.
+
+    Stage 1 writes a flag log per file with no corrections and no flags,
+    because the AI has not run yet; stage 3 overwrites it with the real one.
+    In between, a folder inspected by hand shows "(none)" and "0 entries
+    require review", which reads as a finished file with nothing wrong rather
+    than a file whose review is still running.
+    """
+    edited = wf / "Edited_Captions"
+    for cues in cues_files:
+        stem = cues.name[: -len(".cues.txt")]
+        log = edited / f"FlagLog_{stem}.txt"
+        if not log.is_file():
+            continue
+        try:
+            log.write_text(
+                "CAPTION CLEANUP FLAG LOG\n"
+                f"File: {stem}\n"
+                + "─" * 62 + "\n\n"
+                "AI REVIEW IN PROGRESS — THIS FILE IS NOT FINISHED\n\n"
+                "The captions have had the automatic pass only. Claude is\n"
+                "still reviewing them; corrections and flags will replace\n"
+                "this note when it finishes.\n\n"
+                "If this note is still here, the review did not complete —\n"
+                "run Clean captions again.\n",
+                encoding="utf-8")
+        except OSError:
+            pass   # cosmetic only; never fail a run over it
+
+
 def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
     """Clean the way the caption-cleanup skill does, in three stages.
 
@@ -177,66 +209,92 @@ def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
     jdir = wf / JUDGMENT_DIR
     shutil.rmtree(jdir, ignore_errors=True)
 
-    # Stage 1 — deterministic, no AI.
-    batch.cmd_clean(SimpleNamespace(
-        raw=str(wf / "Raw_Captions"),
-        out=str(wf / "Edited_Captions"),
-        archive=str(wf / "Archived_Captions"),
-        course=course or None,
-        speaker=speaker or None,
-        backend="stub",
-        model=None,
-        batch=False,
-        judgment_dir=None,
-        emit_prompts=str(jdir),
-        no_archive=False,
-    ))
+    # Stage 1 — deterministic, no AI. cmd_clean prints its own "Cleaned N
+    # file(s) — 0 correction(s), 0 flag(s)" summary, which is true for the CLI
+    # where that IS the whole job, but here it announces completion at the
+    # one-third mark and reads as a finished result with nothing found.
+    # Swallow it and report the stage instead.
+    print("Step 1 of 3 — preparing captions")
+    staged = io.StringIO()
+    with contextlib.redirect_stdout(staged):
+        batch.cmd_clean(SimpleNamespace(
+            raw=str(wf / "Raw_Captions"),
+            out=str(wf / "Edited_Captions"),
+            archive=str(wf / "Archived_Captions"),
+            course=course or None,
+            speaker=speaker or None,
+            backend="stub",
+            model=None,
+            batch=False,
+            judgment_dir=None,
+            emit_prompts=str(jdir),
+            no_archive=False,
+        ))
+    # Warnings (duplicate names, unreadable files) still matter to the user.
+    for line in staged.getvalue().splitlines():
+        if "WARNING" in line or "ERROR" in line:
+            print(f"  {line.strip()}")
 
     cues_files = sorted(jdir.glob("*.cues.txt"))
     if not cues_files:
         shutil.rmtree(jdir, ignore_errors=True)
+        print("  No caption files found in Raw_Captions.")
         return
+    n = len(cues_files)
+    _mark_awaiting_review(wf, cues_files)
+    print(f"  {n} file(s) ready.\n")
 
     # Stage 2 — one reviewer per file.
-    n = len(cues_files)
-    print(f"\nReviewing {n} file(s) with Claude — one reviewer each, "
-          f"up to {MAX_PARALLEL_REVIEWS} at a time. This is the slow part.")
-    backend = ClaudeCLIBackend()
-    judged = 0
+    print(f"Step 2 of 3 — reviewing with Claude")
+    print(f"  Two passes per file, up to {MAX_PARALLEL_REVIEWS} files at a "
+          f"time. Allow a few minutes per file.")
+    backend = ClaudeCLIBackend(progress=lambda _msg: None)   # stage lines only
+    done = 0
     failures: list[str] = []
 
     def review(cues_path: Path):
         stem = cues_path.name[: -len(".cues.txt")]
-        return cues_path, backend.judge_file(cues_path, jdir / f"{stem}.judgment.json")
+        print(f"  {stem} — in process")
+        return stem, backend.judge_file(cues_path, jdir / f"{stem}.judgment.json")
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REVIEWS) as pool:
         futures = [pool.submit(review, c) for c in cues_files]
         for fut in as_completed(futures):
             try:
-                cues_path, (ncorr, nflag) = fut.result()
-                judged += 1
-                stem = cues_path.name[: -len(".cues.txt")]
-                print(f"  [{judged}/{n}] {stem} — {ncorr} correction(s), "
-                      f"{nflag} flag(s)")
+                stem, (ncorr, nflag) = fut.result()
+                done += 1
+                print(f"  {stem} — completed ({done} of {n})")
             except ClaudeCLIError as e:
                 failures.append(str(e))
-                print(f"  ERROR: {e}")
+                print(f"  could not be reviewed: {e}")
 
-    if failures and not judged:
+    if failures and not done:
         shutil.rmtree(jdir, ignore_errors=True)
         raise ClaudeCLIError(
             "No file could be reviewed. Your captions are cleaned but "
             "unreviewed in Edited_Captions; run Clean again to retry.")
 
     # Stage 3 — fold the judgments in. Files without one keep the baseline.
-    print()
-    batch.cmd_apply_judgment(SimpleNamespace(
-        edited=str(wf / "Edited_Captions"),
-        judgment_dir=str(jdir),
-    ))
+    print(f"\nStep 3 of 3 — applying corrections")
+    applied = io.StringIO()
+    with contextlib.redirect_stdout(applied):
+        batch.cmd_apply_judgment(SimpleNamespace(
+            edited=str(wf / "Edited_Captions"),
+            judgment_dir=str(jdir),
+        ))
     shutil.rmtree(jdir, ignore_errors=True)
+
+    # One honest total, from the flag logs that were actually written.
+    corr = flags = 0
+    for line in applied.getvalue().splitlines():
+        m = re.search(r"(\d+) correction\(s\), (\d+) flag\(s\)", line)
+        if m:
+            corr += int(m.group(1))
+            flags += int(m.group(2))
+    print(f"\nCompleted — {n} file(s), {corr} correction(s) applied, "
+          f"{flags} flag(s) to review.")
     if failures:
-        print(f"\nWARNING: {len(failures)} file(s) could not be reviewed and "
+        print(f"WARNING: {len(failures)} file(s) could not be reviewed and "
               f"were left as the plain deterministic clean.")
 
 
