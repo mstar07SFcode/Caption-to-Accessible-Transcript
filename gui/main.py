@@ -60,7 +60,13 @@ class JsApi:
 
     def pick_folder(self):
         import webview
-        result = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        # pywebview 6 replaced FOLDER_DIALOG with FileDialog.FOLDER. The old
+        # constant still works but prints a deprecation warning on every open,
+        # and requirements-gui.txt allows 5.x, so prefer the enum and fall back.
+        kind = getattr(getattr(webview, "FileDialog", None), "FOLDER", None)
+        if kind is None:
+            kind = webview.FOLDER_DIALOG
+        result = self.window.create_file_dialog(kind)
         if not result:
             return None
         return result[0] if isinstance(result, (list, tuple)) else result
