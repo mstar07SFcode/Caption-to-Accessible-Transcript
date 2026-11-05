@@ -64,7 +64,13 @@ DEFAULT_EFFORT = "high"           # the continuation/capitalization sweep
                                   # is methodical work over every adjacent
                                   # pair; at default effort the model finds
                                   # the obvious name fixes and little else
-DEFAULT_TIMEOUT = 600             # seconds per file
+DEFAULT_TIMEOUT = 1200            # seconds per reviewer PASS, not per
+                                  # file: judge_file makes two calls and
+                                  # each gets its own. 600 sat right on
+                                  # top of how long this material takes
+                                  # -- a 630-cue lecture timed out in
+                                  # pass 1 while a 661-cue one finished.
+                                  # Override with CAPTION_CLAUDE_TIMEOUT.
 _PKG = Path(__file__).resolve().parent
 _CLEANUP_RULES = _PKG.parent / "rules" / "Caption_Cleanup_Rules.md"
 _PUBLISH_RULES = _PKG.parent / "rules" / "Transcript_Publish_Rules.md"
@@ -167,7 +173,7 @@ def auth_status() -> dict:
 
 
 class ClaudeCLIBackend:
-    def __init__(self, model: str | None = None, timeout: int = DEFAULT_TIMEOUT,
+    def __init__(self, model: str | None = None, timeout: int | None = None,
                  progress=None, **_ignored):
         self.claude = find_claude()
         if not self.claude:
@@ -179,7 +185,14 @@ class ClaudeCLIBackend:
         self.effort = os.environ.get("CAPTION_CLAUDE_EFFORT", DEFAULT_EFFORT)
         self.system_mode = os.environ.get("CAPTION_CLAUDE_SYSTEM_MODE",
                                           DEFAULT_SYSTEM_MODE)
-        self.timeout = timeout
+        # Same idiom as model/effort/system_mode above: an explicit
+        # argument wins, then the environment, then the default. A
+        # non-numeric override is ignored rather than crashing a run.
+        try:
+            env_timeout = int(os.environ.get("CAPTION_CLAUDE_TIMEOUT", ""))
+        except ValueError:
+            env_timeout = 0
+        self.timeout = timeout or env_timeout or DEFAULT_TIMEOUT
         self.progress = progress or (lambda msg: print(msg))
         self._cleanup_rules_text = (
             _CLEANUP_RULES.read_text(encoding="utf-8") if _CLEANUP_RULES.exists() else "")
@@ -333,21 +346,42 @@ class ClaudeCLIBackend:
                 cmd += ["--session-id", session_id]
             else:
                 cmd += ["--no-session-persistence"]
+            r = None
+            timed_out = False
             try:
                 r = subprocess.run(cmd, input=instruction, capture_output=True,
                                    text=True, timeout=self.timeout,
                                    cwd=str(workdir), env=_child_env())
             except subprocess.TimeoutExpired:
-                raise ClaudeCLIError(f"{read_name}: no answer within {self.timeout}s.")
+                # The judgment is written to a file, not returned in the
+                # reply, so a reviewer that finished the work and then
+                # hung on its closing turn has already left a usable
+                # file behind. Look at the disk before throwing the
+                # pass away; the clock running out is not proof that
+                # nothing was done.
+                timed_out = True
+
+        def _timed_out() -> ClaudeCLIError:
+            err = ClaudeCLIError(
+                f"{read_name}: no answer within {self.timeout}s.")
+            err.retryable = True
+            return err
 
         out_path = workdir / write_name
         if not out_path.exists():
+            if timed_out:
+                raise _timed_out()
             detail = (r.stdout or r.stderr or "")[:300]
             raise ClaudeCLIError(f"{read_name}: no judgment file written. {detail}")
         try:
             data = _extract_json(out_path.read_text(encoding="utf-8"))
         except (APIBackendError, json.JSONDecodeError) as e:
+            if timed_out:
+                raise _timed_out() from e
             raise ClaudeCLIError(f"{read_name}: judgment was not valid JSON.") from e
+        if timed_out:
+            self.progress(f"  ({read_name}: ran out of time, but its"
+                          f" judgment was already written -- keeping it)")
         data.setdefault("corrections", [])
         data.setdefault("flags", [])
         return data
@@ -373,8 +407,7 @@ class ClaudeCLIBackend:
         self.progress(f"     {label}: pass 1 of 2 — reviewing the whole file")
 
         session = str(uuid.uuid4())
-        first = self._review(
-            workdir, cues_path.name, out_path.name,
+        pass1_instruction = (
             f"Read {cues_path.name}. It holds every caption entry for one "
             "lecture.\n\n"
             "Your system prompt contains the complete cleanup rules. Apply ALL "
@@ -388,8 +421,26 @@ class ClaudeCLIBackend:
             f"Write the judgment as one JSON object to {out_path.name}, in the "
             "shape your system prompt specifies. The file is the output — do "
             "not put the JSON in your reply. Finish with only a count line: "
-            "DONE: <n> corrections, <n> flags.",
-            session_id=session)
+            "DONE: <n> corrections, <n> flags.")
+
+        def _pass1(sid: str) -> dict:
+            return self._review(workdir, cues_path.name, out_path.name,
+                                pass1_instruction, session_id=sid)
+
+        try:
+            first = _pass1(session)
+        except ClaudeCLIError as e:
+            if not getattr(e, "retryable", False):
+                raise
+            # Pass 2 below already degrades to "keep pass 1" when it
+            # fails. Pass 1 had no equivalent, so one slow reviewer threw
+            # away a whole lecture and left the deterministic clean as
+            # the finished article. A fresh session id, because the one
+            # that ran out of time may be stopped mid-turn.
+            self.progress(f"     {label}: pass 1 did not finish ({e})"
+                          f" -- trying once more")
+            session = str(uuid.uuid4())
+            first = _pass1(session)
 
         self.progress(f"     {label}: pass 1 found {len(first['corrections'])} "
                       f"correction(s), {len(first['flags'])} flag(s) — "

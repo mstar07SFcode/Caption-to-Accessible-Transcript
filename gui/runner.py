@@ -256,7 +256,11 @@ def _clean_with_agents(wf: Path, course: str, speaker: str) -> None:
     print(f"Step 2 of 3 — reviewing with Claude")
     print(f"  Two passes per file, up to {MAX_PARALLEL_REVIEWS} files at a "
           f"time. Allow a few minutes per file.")
-    backend = ClaudeCLIBackend(progress=lambda _msg: None)   # stage lines only
+    # The per-pass lines -- "pass 1 of 2", "pass 1 found N correction(s)",
+    # "second pass skipped" -- are the only way to tell a slow half of a
+    # file's review from a hung one. Dropping them made a ten-minute stall
+    # look identical to a crash, and left the timeout naming no pass.
+    backend = ClaudeCLIBackend(progress=print)
     done = 0
     failures: list[str] = []
 
