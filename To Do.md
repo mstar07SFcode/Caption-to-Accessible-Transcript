@@ -1,7 +1,8 @@
 # To Do
 
-Running list for this repo. `gui_reference/To Do.md` is a snapshot of the
-other machine's list and is not maintained here.
+Running list for this repo. The earlier machine's own list, and the frozen
+copy of its GUI that this rebuild was worked from, were removed once the
+rebuild was done and running; they are still in history at b26da44.
 
 ## Standing preference — numeric sense over hyphenation
 
