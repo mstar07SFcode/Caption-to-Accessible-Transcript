@@ -72,6 +72,26 @@ class JsApi:
         return result[0] if isinstance(result, (list, tuple)) else result
 
 
+def _serve_in_browser(url: str, why: str) -> int:
+    """Run headless: keep the server alive and let the default browser be the UI.
+
+    The page already covers the two things pywebview provides: Change folder
+    falls back to a typed path (index.html checks window.pywebview first), and
+    the review window opens as a browser tab instead of its own window. So
+    this is the whole app, not a degraded preview of it.
+    """
+    import webbrowser
+    print(why)
+    print(f"Opening in your browser instead:\n  {url}")
+    print("Leave this window open while you work. Press Ctrl+C to quit.")
+    webbrowser.open(url)
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return 0
+
+
 def main() -> int:
     try:
         import uvicorn
@@ -96,16 +116,7 @@ def main() -> int:
     try:
         import webview
     except ImportError:
-        import webbrowser
-        print(f"pywebview is not installed - opening in your browser instead.")
-        print(f"  {url}")
-        print("Close this window (or press Ctrl+C) to quit.")
-        webbrowser.open(url)
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            return 0
+        return _serve_in_browser(url, "pywebview is not installed.")
 
     api = JsApi()
     api.base_url = url
@@ -122,7 +133,13 @@ def main() -> int:
             pass
     app_module.notify_main = _push_refresh
 
-    webview.start()
+    try:
+        webview.start()
+    except webview.WebViewException as e:
+        # Raised from guilib.initialize() inside start(), once it has tried
+        # every GUI toolkit for this platform and found none. The server is
+        # already serving, so fall back rather than die.
+        return _serve_in_browser(url, f"No app window is available here: {e}")
     return 0
 
 

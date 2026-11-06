@@ -77,7 +77,10 @@ _PUBLISH_RULES = _PKG.parent / "rules" / "Transcript_Publish_Rules.md"
 _PROMPTS = _PKG / "prompts"
 
 # Where the Claude Code installers put the binary, for when the app is started
-# without the user's normal shell PATH (e.g. from Finder).
+# without the user's normal shell PATH (e.g. from Finder, or a double-clicked
+# .bat). shutil.which covers the normal case on both platforms -- on Windows it
+# consults PATHEXT, so a bare "claude" finds claude.cmd -- and these are the
+# fallback for a PATH that never got the installer's additions.
 _CANDIDATES = [
     "~/.local/bin/claude",
     "~/.claude/local/claude",
@@ -85,6 +88,39 @@ _CANDIDATES = [
     "/usr/local/bin/claude",
     "~/.npm-global/bin/claude",
 ]
+
+# npm's global prefix on Windows, where `npm i -g @anthropic-ai/claude-code`
+# leaves claude.cmd.
+_WIN_CANDIDATES = [
+    r"%APPDATA%\npm\claude.cmd",
+    r"%LOCALAPPDATA%\npm\claude.cmd",
+]
+
+
+def _on_windows() -> bool:
+    """One place to ask, so a test can answer for a platform it is not on.
+
+    Patching os.name instead would reach pathlib, which picks WindowsPath
+    from it and then refuses to instantiate off Windows.
+    """
+    return os.name == "nt"
+
+
+def launch_argv(path: str) -> list[str]:
+    """The argv prefix that actually runs `path`.
+
+    On Windows the npm installer leaves `claude.cmd`, and a batch file is not
+    an executable image: CreateProcess refuses it, so subprocess.run([path])
+    fails with WinError 193 no matter how correct the path is. cmd.exe has to
+    interpret it. /c runs the file and exits; /d skips any per-user AutoRun
+    script, which would otherwise print its own output into what we capture
+    and parse as Claude's answer.
+
+    Everywhere else -- and for a real .exe on Windows -- this is just [path].
+    """
+    if _on_windows() and path.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/d", "/c", path]
+    return [path]
 
 
 class ClaudeCLIError(APIBackendError):
@@ -128,9 +164,15 @@ def find_claude() -> str | None:
     found = shutil.which("claude")
     if found:
         return found
-    for c in _CANDIDATES:
-        p = Path(c).expanduser()
-        if p.is_file() and os.access(p, os.X_OK):
+    # Exclusive, not additive: the POSIX paths cannot exist on Windows, and
+    # carrying them there only gives a wrong answer a chance to match first.
+    candidates = _WIN_CANDIDATES if _on_windows() else _CANDIDATES
+    for c in candidates:
+        p = Path(os.path.expandvars(c)).expanduser()
+        # A .cmd is not marked executable on Windows the way a POSIX binary
+        # is, and os.access(X_OK) there answers for the file's ACL, not for
+        # "can be run" -- so on Windows existing is the test.
+        if p.is_file() and (_on_windows() or os.access(p, os.X_OK)):
             return str(p)
     return None
 
@@ -151,7 +193,8 @@ def auth_status() -> dict:
         return {"found": False, "path": "", "logged_in": False, "method": "none",
                 "message": "Claude Code is not installed on this Mac."}
     try:
-        r = subprocess.run([path, "auth", "status"], capture_output=True,
+        r = subprocess.run(launch_argv(path) + ["auth", "status"],
+                           capture_output=True,
                            text=True, timeout=20, env=_child_env())
     except Exception as e:  # noqa: BLE001
         return {"found": True, "path": path, "logged_in": False, "method": "unknown",
@@ -248,7 +291,7 @@ class ClaudeCLIBackend:
                 "nothing but a one-line count, e.g. DONE: 96 corrections, 18 flags."
             )
 
-            cmd = [self.claude, "-p",
+            cmd = launch_argv(self.claude) + ["-p",
                    "--output-format", "json",
                    "--model", self.model,
                    ("--append-system-prompt-file"
@@ -318,7 +361,7 @@ class ClaudeCLIBackend:
             sys_file = Path(tmp) / "system.md"
             sys_file.write_text(self._system_for("corrections.md", rules),
                                 encoding="utf-8")
-            cmd = [self.claude, "-p",
+            cmd = launch_argv(self.claude) + ["-p",
                    "--output-format", "json",
                    "--model", self.model,
                    "--effort", self.effort,
