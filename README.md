@@ -19,7 +19,9 @@ you run it standalone, from the **Anthropic API**.
 
 ## Requirements
 
-- **Python 3.9+** (for the pipeline). No third-party libraries for the core.
+- **Python 3.9+**, for the pipeline and the desktop app alike. The core needs
+  no third-party libraries; the app installs its own into a private `.venv` on
+  first run.
 - **Claude** (Cowork or Claude Code) for the AI judgment via your own account —
   *or* an **Anthropic API key** to run the AI judgment standalone (`pip install
   anthropic`). Basic, deterministic cleanup needs neither.
@@ -52,6 +54,12 @@ Double-click launchers (macOS) are in `launchers/`. Run
 `0_Setup_AI_Cleanup.command` once to enable AI mode (creates a venv, installs
 `anthropic`), then `1_Clean_Captions`, `2_Apply_FlagLog`, `3_Publish_Transcripts`.
 Basic mode needs only Python; AI mode prompts for an Anthropic API key.
+
+`4_Open_App.command` opens all three steps in one window instead. Its first run
+builds its own `.venv` from `requirements-gui.txt`, so it needs an internet
+connection once. It takes its AI judgment from Claude Code signed in to your
+plan, so it never asks for an API key — the window says so on screen, and tells
+you what to do if Claude Code is missing or signed out.
 
 On first run a launcher asks where your caption folders are and creates the
 five subfolders if they are missing. The answer is remembered in

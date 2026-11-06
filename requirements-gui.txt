@@ -1,5 +1,10 @@
 # Desktop GUI dependencies. The core pipeline needs none of these.
 #   python3 -m venv .venv && .venv/bin/pip install -r requirements-gui.txt
+#
+# These are floors, not pins, so they resolve on Python 3.9 as well as current
+# ones -- pip just picks older releases there. Keep them floors: pinning the
+# current versions would quietly raise the project's Python requirement to
+# 3.10, which the pipeline and the launchers do not need.
 fastapi>=0.110
 uvicorn>=0.27
 pydantic>=2.0
