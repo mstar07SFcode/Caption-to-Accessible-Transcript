@@ -64,7 +64,9 @@ def write_flaglog(source_filename: str,
     out.append(RULE)
     out.append("")
     out.append("CORRECTIONS APPLIED")
-    out.append("These corrections were applied with ≥90% confidence.")
+    out.append("High-confidence corrections (≥90%), plus suggested replacements for")
+    out.append("entries that were flagged. Lines marked \"Suggested\" were the less")
+    out.append("certain of the two — check those against the video first.")
     out.append("")
     if corrections:
         for c in corrections:
@@ -76,9 +78,9 @@ def write_flaglog(source_filename: str,
     out.append("")
     n = len(reviews)
     out.append(f"ENTRIES REQUIRING HUMAN REVIEW  ({n} {'entry' if n == 1 else 'entries'})")
-    out.append("These entries contain likely auto-caption errors that could not be")
-    out.append("corrected with confidence. Please listen to the video and correct")
-    out.append("the cleaned file as needed.")
+    out.append("These entries could not be resolved from context — no replacement was")
+    out.append("suggested for them. Please listen to the video and correct the cleaned")
+    out.append("file as needed.")
     out.append("")
     if reviews:
         for r in reviews:

@@ -156,3 +156,13 @@ def build_docx(cues: list[Cue], judgment: PublishJudgment,
 
     build_body(doc, cues, judgment)
     return doc
+
+
+def docx_available() -> bool:
+    """True when python-docx is installed, so callers can offer Word output
+    without importing the renderer (and its hard `from docx import ...`)."""
+    try:
+        import docx  # noqa: F401
+        return True
+    except ImportError:
+        return False

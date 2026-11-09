@@ -150,13 +150,49 @@ def test_apply_judgment():
     j = CleanupJudgment(
         corrections=[{"entry": 1, "find": "an example", "replace": "an example case",
                       "reason": "test"}],
-        flags=[{"entry": 3, "issue": "garbled", "possible": "x"}],
+        flags=[{"entry": 3, "found": "learn it is so much more",
+                "issue": "garbled", "possible": "learn it is so much more than that"},
+               {"entry": 2, "issue": "proper name", "possible": "Listen to verify"}],
     )
     cues, corr, rev = apply_cleanup(cues, j)
     check("judgment: correction applied", "an example case" in cues[0].text)
-    check("judgment: 1 correction logged", len(corr) == 1)
-    check("judgment: 1 review", len(rev) == 1 and rev[0].entry == 3)
-    check("judgment: review timecode derived", rev[0].timecode == "00:13")
+    # A flag carrying a real replacement is applied and logged, not held back.
+    check("judgment: suggested flag applied to text",
+          "learn it is so much more than that" in cues[2].text)
+    check("judgment: 2 corrections logged", len(corr) == 2)
+    check("judgment: suggested correction labelled",
+          any("Suggested" in c.description and c.entry == 3 for c in corr))
+    # Only the listen-only flag survives for human review.
+    check("judgment: 1 review", len(rev) == 1 and rev[0].entry == 2)
+    check("judgment: review timecode derived", rev[0].timecode == "00:09")
+
+
+# ---- flags that must NOT be auto-applied ----------------------------------
+def test_flag_autoapply_guards():
+    def run(flag):
+        cues = clean_cues(P.parse_srt(SRT_SAMPLE))
+        return cues, *apply_cleanup(cues, CleanupJudgment(flags=[flag]))[1:]
+
+    cues, corr, rev = run({"entry": 3, "issue": "unsure",
+                           "possible": "Listen to verify"})
+    check("guard: listen-only stays a review", not corr and len(rev) == 1)
+
+    before = clean_cues(P.parse_srt(SRT_SAMPLE))[2].text
+    cues, corr, rev = run({"entry": 3, "found": before, "issue": "ok as is",
+                           "possible": before})
+    check("guard: possible == found stays a review", not corr and len(rev) == 1)
+    check("guard: possible == found leaves text alone", cues[2].text == before)
+
+    cues, corr, rev = run({"entry": 3, "found": "text that is not in the cue",
+                           "issue": "stale", "possible": "something else"})
+    check("guard: unmatched found stays a review", not corr and len(rev) == 1)
+    check("guard: unmatched found leaves text alone",
+          "something else" not in cues[2].text)
+
+    cues, corr, rev = run({"entry": 3, "found": "learn it", "issue": "note",
+                           "possible": "unknown"})
+    check("guard: listen-only prefix word stays a review",
+          not corr and len(rev) == 1)
 
 
 # ---- publish html ---------------------------------------------------------
@@ -465,7 +501,7 @@ def test_title_transform():
 if __name__ == "__main__":
     for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
                test_vtt, test_flaglog, test_flaglog_scoping,
-               test_apply_judgment, test_publish,
+               test_apply_judgment, test_flag_autoapply_guards, test_publish,
                test_publish_never_adds_text, test_publish_deletion_is_opt_in,
                test_title_transform]:
         print(f"\n# {fn.__name__}")

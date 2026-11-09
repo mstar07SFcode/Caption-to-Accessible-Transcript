@@ -32,6 +32,14 @@ STRICT RULE FOR THE `possible` FIELD — read this before writing any flag
 
 `possible` must NEVER contain editorial commentary, instructions, or notes.
 
+WHAT HAPPENS TO EACH ONE — this changes how you should choose between them.
+A replacement string (a) is APPLIED AUTOMATICALLY to the captions and listed
+under "Corrections Applied" in the flag log; no human approves it first. Only
+"Listen to verify" (b) leaves the text untouched and sends the entry to the
+human review section. So write a replacement when you have a real candidate you
+would want in the file, and write "Listen to verify" when you do not — never a
+half-guess you are only floating for discussion.
+
 INVALID — do not write these:
   ✗  "Retain verbatim"
   ✗  "Retain verbatim or confirm identity of speaker"
@@ -49,8 +57,9 @@ VALID examples:
 
 When the text seems correct but you want a human to check it (e.g. a proper name
 you cannot verify, or verbatim speech that is unusual but probably right), write
-`"Listen to verify"` — NOT a commentary. The apply step skips "Listen to verify"
-entries safely, and the reviewer sees the Issue note for context.
+`"Listen to verify"` — NOT a commentary, and NOT a speculative replacement. That
+is the only value that keeps the cue's text as it is and puts the entry in front
+of a human, with your Issue note for context.
 
 RULES FOR PRODUCING CORRECTIONS AND FLAGS
 
@@ -58,8 +67,11 @@ RULES FOR PRODUCING CORRECTIONS AND FLAGS
    is that substring corrected. Keep edits as small as possible. Never rewrite a
    whole cue when a few words changed.
 
-2. Apply a correction ONLY at ≥90% confidence. Otherwise add a flag and leave
-   the text unchanged. When in doubt, flag — do not guess.
+2. Put an edit in `corrections` ONLY at ≥90% confidence. Below that, add a flag.
+   A flag whose `possible` is a replacement still edits the text (it is applied
+   and logged as "Suggested"), so reach for it when you have a genuine candidate
+   below the 90% bar. When you have no candidate at all — you cannot tell what
+   was said — flag with `"Listen to verify"`. Do not guess.
 
 3. NEVER insert a word the speaker did not say. Do not add `[a]`, `[in]`, `[to]`,
    etc., and never use square brackets. EXCEPTION — restoring a clearly

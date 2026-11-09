@@ -426,9 +426,9 @@ def write_flaglog_entries(wf: Path, filename: str, entries: list[dict]) -> None:
     body: list[str] = [""]
     n = len(kept)
     body.append(f"ENTRIES REQUIRING HUMAN REVIEW  ({n} {'entry' if n == 1 else 'entries'})")
-    body.append("These entries contain likely auto-caption errors that could not be")
-    body.append("corrected with confidence. Please listen to the video and correct")
-    body.append("the cleaned file as needed.")
+    body.append("These entries could not be resolved from context — no replacement was")
+    body.append("suggested for them. Please listen to the video and correct the cleaned")
+    body.append("file as needed.")
     body.append("")
     if kept:
         for e in kept:

@@ -161,7 +161,10 @@ def build_body(cues: list[Cue], judgment: PublishJudgment) -> str:
             # Timecode precedes every heading except the very first h2.
             if not (level == 2 and not first_section_emitted):
                 parts.append(f'<p class="timecode">[{_mmss(cue.start)}]</p>')
-            parts.append(f"<h{level}>{html.escape(sec['title'])}</h{level}>")
+            # Bracketed: this heading is an AI-derived topic label, not
+            # something the speaker said (same convention as [Applause] and
+            # [unintelligible] here, and as the Word output in docx_publish).
+            parts.append(f"<h{level}>[{html.escape(sec['title'])}]</h{level}>")
             if level == 2:
                 first_section_emitted = True
 

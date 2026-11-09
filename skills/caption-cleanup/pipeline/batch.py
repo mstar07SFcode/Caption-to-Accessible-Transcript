@@ -37,6 +37,16 @@ def make_backend(args):
         except APIBackendError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(2)
+    if getattr(args, "backend", "stub") == "claude":
+        # AI through the Claude Code CLI, signed in with your Claude plan —
+        # no API key and no per-token cost. See pipeline/claude_cli_backend.py.
+        # Exit 3 (not 2) so a caller can tell "not signed in" from "bad key".
+        from .claude_cli_backend import ClaudeCLIBackend, ClaudeCLIError
+        try:
+            return ClaudeCLIBackend(model=getattr(args, "model", None))
+        except ClaudeCLIError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(3)
     return StubBackend()
 
 
@@ -102,7 +112,9 @@ def cmd_clean(args) -> int:
                 judgments[j["out_stem"]] = CleanupJudgment.from_json(
                     json.loads(jf.read_text()))
             else:
-                judgments[j["out_stem"]] = backend.cleanup(j["cues"], {})
+                # The stem lets a backend label its progress per file.
+                judgments[j["out_stem"]] = backend.cleanup(
+                    j["cues"], {"stem": j["out_stem"]})
 
     # Phase 3 — apply, write outputs, archive sources.
     summary = []
@@ -205,11 +217,18 @@ def cmd_publish(args) -> int:
     backend = make_backend(args)
     jdir = Path(args.judgment_dir) if args.judgment_dir else None
     out_format = getattr(args, "format", "html")
+    want_html = out_format in ("html", "both")
+    want_docx = out_format in ("docx", "both")
+    # --docx is optional: without it, Word files land beside the HTML, which is
+    # what --format docx alone has always done.
+    docxout = Path(args.docx) if getattr(args, "docx", None) else htmlout
+    if want_docx:
+        docxout.mkdir(parents=True, exist_ok=True)
 
     # Check the optional docx dependency up front. The render itself happens in
     # Phase 3, after the judgment phase — importing there would let an --backend
     # api --batch run submit (and pay for) a batch before failing on the import.
-    if out_format == "docx":
+    if want_docx:
         try:
             from .docx_publish import build_docx
         except ImportError:
@@ -263,21 +282,26 @@ def cmd_publish(args) -> int:
         speaker = speaker_map.get(j["stem"], doc.meta.get("speaker", ""))
         course = doc.meta.get("course", "")
 
-        if out_format == "docx":
-            title = title_map.get(j["stem"], title_from_stem(j["stem"]))
-            docx_doc = build_docx(doc.cues, judgment, speaker=speaker,
-                                  course=course, title=title)
-            docx_doc.save(str(htmlout / naming.transcript_docx_name(title)))
-        else:
+        # Both formats render from the one judgment above, so asking for both
+        # costs exactly one judgment phase -- and one API bill -- not two.
+        if want_html:
             html_text = build_html(doc.cues, judgment, speaker=speaker,
                                    course=course, title=title_from_stem(j["stem"]))
             (htmlout / naming.transcript_html_name(v.name)).write_text(
                 html_text, encoding="utf-8")
+        if want_docx:
+            title = title_map.get(j["stem"], title_from_stem(j["stem"]))
+            docx_doc = build_docx(doc.cues, judgment, speaker=speaker,
+                                  course=course, title=title)
+            docx_doc.save(str(docxout / naming.transcript_docx_name(title)))
 
         (vttout / v.name).write_text(
             V.strip_header(v.read_text(encoding="utf-8")), encoding="utf-8")
 
-    print(f"Published {len(vtts)} transcript(s) ({out_format}) to {htmlout}")
+    if want_html:
+        print(f"Published {len(vtts)} transcript(s) (html) to {htmlout}")
+    if want_docx:
+        print(f"Published {len(vtts)} transcript(s) (docx) to {docxout}")
 
     # Destructive cleanup is opt-in. It runs only AFTER the HTML and archived
     # VTTs above are safely written, so a failed run can never leave the user
@@ -320,7 +344,7 @@ def main(argv=None) -> int:
     c.add_argument("--archive", required=True)
     c.add_argument("--course", default=None)
     c.add_argument("--speaker", default=None)
-    c.add_argument("--backend", choices=["stub", "api"], default="stub")
+    c.add_argument("--backend", choices=["stub", "api", "claude"], default="stub")
     c.add_argument("--model", default=None)
     c.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")
@@ -346,13 +370,17 @@ def main(argv=None) -> int:
                         "(named --html for history; used for docx output too "
                         "when --format docx)")
     p.add_argument("--archive", required=True)
-    p.add_argument("--backend", choices=["stub", "api"], default="stub")
+    p.add_argument("--backend", choices=["stub", "api", "claude"], default="stub")
     p.add_argument("--model", default=None)
     p.add_argument("--batch", action="store_true",
                    help="submit all files as one Message Batch (50%% cheaper, async)")
     p.add_argument("--judgment-dir", default=None)
-    p.add_argument("--format", choices=["html", "docx"], default="html",
-                   help="output document format (default html)")
+    p.add_argument("--format", choices=["html", "docx", "both"], default="html",
+                   help="output document format: html (default), docx, or both. "
+                        "both renders each transcript twice from one judgment, "
+                        "so the AI step is paid for once.")
+    p.add_argument("--docx", default=None,
+                   help="folder for .docx transcripts (default: same as --html)")
     p.add_argument("--title-map", default=None,
                    help="path to a JSON {vtt_stem: title} file overriding the "
                         "default derived title (and, for docx, the filename)")

@@ -25,6 +25,21 @@ _LISTEN_ONLY = re.compile(
 )
 
 
+def is_listen_only(text: str) -> bool:
+    """True when a suggestion is a note ("Listen to verify") rather than wording."""
+    return not (text or "").strip() or bool(_LISTEN_ONLY.match(text))
+
+
+def editable_possible(found: str, possible: str) -> str:
+    """The text to put in a flag's 'Replace with' box: the AI's suggested
+    wording, or an empty string when it only left a note such as "Listen to
+    verify". The box then shows a light placeholder instead, so that note text
+    can never end up in the captions. (`found` is kept for call compatibility.)"""
+    if is_listen_only(possible) or possible.strip() == (found or "").strip():
+        return ""   # a "suggestion" that repeats the line is no suggestion
+    return possible
+
+
 @dataclass
 class Correction:
     entry: int
@@ -49,7 +64,9 @@ def write_flaglog(source_filename: str,
     out.append(RULE)
     out.append("")
     out.append("CORRECTIONS APPLIED")
-    out.append("These corrections were applied with ≥90% confidence.")
+    out.append("High-confidence corrections (≥90%), plus suggested replacements for")
+    out.append("entries that were flagged. Lines marked \"Suggested\" were the less")
+    out.append("certain of the two — check those against the video first.")
     out.append("")
     if corrections:
         for c in corrections:
@@ -61,9 +78,9 @@ def write_flaglog(source_filename: str,
     out.append("")
     n = len(reviews)
     out.append(f"ENTRIES REQUIRING HUMAN REVIEW  ({n} {'entry' if n == 1 else 'entries'})")
-    out.append("These entries contain likely auto-caption errors that could not be")
-    out.append("corrected with confidence. Please listen to the video and correct")
-    out.append("the cleaned file as needed.")
+    out.append("These entries could not be resolved from context — no replacement was")
+    out.append("suggested for them. Please listen to the video and correct the cleaned")
+    out.append("file as needed.")
     out.append("")
     if reviews:
         for r in reviews:
@@ -139,7 +156,7 @@ class ApplyResult:
     new_vtt_text: str
 
 
-def _cue_text_line_spans(vtt_text: str) -> dict[int, tuple[int, int]]:
+def entry_text_spans(vtt_text: str) -> dict[int, tuple[int, int]]:
     """Map each cue's entry number -> [start, end) line range of its TEXT lines.
 
     Walks the file's own lines rather than re-serializing it, so everything
@@ -189,9 +206,12 @@ def apply_flaglog(vtt_text: str, flaglog_text: str) -> ApplyResult:
     reviews = parse_flaglog(flaglog_text)
     applied, skipped, unmatched = [], [], []
     lines = vtt_text.split("\n")
-    spans = _cue_text_line_spans(vtt_text)
+    spans = entry_text_spans(vtt_text)
 
     for r in reviews:
+        if r.found and r.possible.strip() == r.found.strip():
+            skipped.append((r.entry, "(left as is)"))
+            continue
         if not r.possible or _LISTEN_ONLY.match(r.possible):
             skipped.append((r.entry, r.possible or "(no replacement)"))
             continue
