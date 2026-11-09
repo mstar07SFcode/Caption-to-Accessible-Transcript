@@ -113,22 +113,16 @@ before committing:
 bash tools/sync_to_skills.sh
 ```
 
-Two things keep you from forgetting that step, because a copy that silently
-falls behind ships stale code to the plugin while the repo's own tests go on
-passing against the root:
+In practice you rarely run that by hand. `bash tools/setup.sh` installs a
+pre-commit hook that syncs and stages the copies for you, the test suite fails
+when a copy is stale and names the files, and CI re-runs the sync on every push
+and fails if anything changed — so a missed sync surfaces instead of quietly
+shipping.
 
-```bash
-bash tools/install_hooks.sh      # once per clone, on each machine
-```
+`skills/*/SKILL.md` is deliberately not synced — edit those in place.
 
-installs a pre-commit hook that runs the sync and stages the copies whenever a
-commit touches `rules/`, `pipeline/` or `templates/`. And `tests/test_pipeline.py`
-runs `tools/sync_to_skills.sh --check`, so a stale copy fails the suite and the
-failure names the files. `--check` compares and changes nothing, which makes it
-safe in CI or a scratch checkout.
-
-`skills/*/SKILL.md` is deliberately not synced — edit those in place. See
-`UPDATING_THE_PLUGIN.md` for the full release process.
+**Working on this repo?** See `CONTRIBUTING.md` for setup in one command, and
+`UPDATING_THE_PLUGIN.md` for the release process.
 
 ## Privacy
 

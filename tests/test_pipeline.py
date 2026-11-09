@@ -19,7 +19,7 @@ from pipeline.publish import build_html, title_from_stem
 
 # The per-skill copies are part of what this repo ships, so the suite that
 # gates a commit checks them too.
-from test_skill_sync import check_skill_copies_in_sync
+from test_skill_sync import check_skill_copies_in_sync, check_hook_installed
 
 
 SRT_SAMPLE = """1
@@ -506,6 +506,7 @@ def test_title_transform():
 # ---- per-skill copies ------------------------------------------------------
 def test_skill_sync():
     check_skill_copies_in_sync(check)
+    check_hook_installed(check)
 
 
 if __name__ == "__main__":
