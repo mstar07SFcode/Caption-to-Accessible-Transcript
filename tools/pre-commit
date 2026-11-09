@@ -1,0 +1,60 @@
+#!/bin/bash
+# Pre-commit hook: keep the per-skill copies in step with the repo root.
+#
+# Cowork mounts only each skills/<name>/ subtree, so those folders carry copies
+# of root-level rules/ and pipeline/. A commit that changes the root without
+# the copies ships stale code to the plugin. Rather than rely on remembering
+# tools/sync_to_skills.sh, this hook runs it and stages the result whenever the
+# commit touches a canonical source.
+#
+# This file is the real hook and is versioned. .git/hooks/pre-commit is a one
+# line shim that execs it -- see tools/install_hooks.sh -- so edits here take
+# effect with no reinstall.
+#
+# Skip it for one commit with:  git commit --no-verify
+set -e
+
+REPO="$(git rev-parse --show-toplevel)"
+cd "$REPO"
+
+# Only act when this commit touches something the skills copy from.
+if ! git diff --cached --name-only --diff-filter=ACMRD \
+     | grep -qE '^(rules|pipeline|templates)/'; then
+  exit 0
+fi
+
+if [ ! -f tools/sync_to_skills.sh ]; then
+  echo "pre-commit: tools/sync_to_skills.sh is missing; cannot sync skill copies." >&2
+  exit 1
+fi
+
+# Being consistent ON DISK is not enough. The copies can already hold the new
+# code while their changes sit unstaged, and then this commit records the root
+# edit without them -- a working tree that looks fine and a history that does
+# not. So sync unconditionally (it is idempotent) and always stage the copies.
+if bash tools/sync_to_skills.sh --check >/dev/null 2>&1; then
+  bash tools/sync_to_skills.sh --quiet >/dev/null
+else
+  echo "pre-commit: canonical sources changed — syncing the per-skill copies."
+  bash tools/sync_to_skills.sh --quiet | sed 's/^/  /'
+fi
+
+# Stage ONLY the generated copies. A broad `git add skills/` would sweep in an
+# unstaged SKILL.md edit the commit was never meant to carry.
+git add -- skills/caption-cleanup/pipeline \
+           skills/flaglog-apply/pipeline \
+           skills/transcript-publish/pipeline \
+           skills/caption-cleanup/rules \
+           skills/transcript-publish/rules 2>/dev/null || true
+
+# Belt and braces: never let a commit through that is still stale.
+if ! bash tools/sync_to_skills.sh --check >/dev/null 2>&1; then
+  echo "pre-commit: copies are STILL stale after syncing — commit aborted." >&2
+  bash tools/sync_to_skills.sh --check >&2 || true
+  exit 1
+fi
+
+# Say so only when the copies actually contribute something to this commit.
+if ! git diff --cached --quiet -- skills/ 2>/dev/null; then
+  echo "pre-commit: per-skill copies staged with this commit."
+fi

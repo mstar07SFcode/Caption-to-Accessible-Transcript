@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import parse as P
 from pipeline.clean import (remove_fillers, clean_cues,
@@ -15,6 +16,10 @@ from pipeline.flaglog import (write_flaglog, parse_flaglog, apply_flaglog,
 from pipeline.judgment import CleanupJudgment, PublishJudgment
 from pipeline.apply import apply_cleanup
 from pipeline.publish import build_html, title_from_stem
+
+# The per-skill copies are part of what this repo ships, so the suite that
+# gates a commit checks them too.
+from test_skill_sync import check_skill_copies_in_sync
 
 
 SRT_SAMPLE = """1
@@ -498,12 +503,17 @@ def test_title_transform():
           "Ch.20" in title_from_stem("MBA-6008_M3_Kotler_Chapter20_WhyToGoGlobal"))
 
 
+# ---- per-skill copies ------------------------------------------------------
+def test_skill_sync():
+    check_skill_copies_in_sync(check)
+
+
 if __name__ == "__main__":
     for fn in [test_parse, test_clean, test_captioner_markers, test_naming,
                test_vtt, test_flaglog, test_flaglog_scoping,
                test_apply_judgment, test_flag_autoapply_guards, test_publish,
                test_publish_never_adds_text, test_publish_deletion_is_opt_in,
-               test_title_transform]:
+               test_title_transform, test_skill_sync]:
         print(f"\n# {fn.__name__}")
         fn()
     print(f"\n{'ALL PASSED' if check.failed == 0 else str(check.failed) + ' FAILED'}")
