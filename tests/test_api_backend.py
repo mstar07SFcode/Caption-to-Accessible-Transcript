@@ -133,7 +133,7 @@ def test_publish_backend():
 
     html = build_html(cues, judgment, title="Transcript Demo")
     check("publish api: doubled word removed", "the the" not in html)
-    check("publish api: section heading present", "<h2>Overview</h2>" in html)
+    check("publish api: section heading present", "<h2>[Overview]</h2>" in html)
 
 
 def test_json_extraction_plain():

@@ -173,7 +173,7 @@ def test_publish():
     check("publish: has h1", "<h1>Transcript MSAS-603 M2 Audit Risk</h1>" in html)
     check("publish: speaker in meta", "Diane Roberts" in html)
     check("publish: first h2 no timecode before it",
-          html.index("<h2>Overview</h2>") <
+          html.index("<h2>[Overview]</h2>") <
           (html.index('class="timecode"') if 'class="timecode"' in html else 10**9))
     check("publish: second section has timecode", "[00:09]" in html)
     check("publish: WCAG max-width", "75ch" in html)

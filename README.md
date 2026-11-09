@@ -19,7 +19,11 @@ you run it standalone, from the **Anthropic API**.
 
 ## Requirements
 
-- **Python 3.9+** (for the pipeline). No third-party libraries for the core.
+- **Python 3.9+**, for the pipeline and the desktop app alike. The core needs
+  no third-party libraries; the app installs its own into a private `.venv` on
+  first run.
+- **macOS or Windows** for the desktop app. Linux runs it too, in the browser
+  fallback, unless you add a toolkit (`pip install 'pywebview[qt]'`).
 - **Claude** (Cowork or Claude Code) for the AI judgment via your own account —
   *or* an **Anthropic API key** to run the AI judgment standalone (`pip install
   anthropic`). Basic, deterministic cleanup needs neither.
@@ -52,6 +56,20 @@ Double-click launchers (macOS) are in `launchers/`. Run
 `0_Setup_AI_Cleanup.command` once to enable AI mode (creates a venv, installs
 `anthropic`), then `1_Clean_Captions`, `2_Apply_FlagLog`, `3_Publish_Transcripts`.
 Basic mode needs only Python; AI mode prompts for an Anthropic API key.
+
+`4_Open_App.command` opens all three steps in one window instead. Its first run
+builds its own `.venv` from `requirements-gui.txt`, so it needs an internet
+connection once. It takes its AI judgment from Claude Code signed in to your
+plan, so it never asks for an API key — the window says so on screen, and tells
+you what to do if Claude Code is missing or signed out.
+
+**On Windows**, double-click `launchers\4_Open_App.bat` for that same app and
+the same first-run install. The numbered `.command` steps are macOS-only; on
+Windows drive the pipeline from PowerShell instead, as under *CLI directly*
+below. If no app window can be opened — a Windows 10 machine with no Edge
+WebView2 runtime, say — the app serves itself in your default browser and tells
+you it did, rather than failing. Everything works there: Change folder asks for
+a typed path, and the review window opens as a browser tab.
 
 On first run a launcher asks where your caption folders are and creates the
 five subfolders if they are missing. The answer is remembered in
