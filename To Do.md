@@ -13,6 +13,47 @@ reads slightly wrong and nothing more. Recorded 2026-10-26.
 
 This already decides one open question — see "append vs replace" below.
 
+## 2026-11-09 — Opened as PR #1, with one thing unverified
+
+The desktop app, the plan-login reviewer and Windows support went up as PR #1
+(`gui` into `main`: 22 commits, 32 files, +4,141/-62). Three concerns were
+raised while checking whether the app would run on someone else's machine. Two
+did not survive being looked at. They are written up here as settled so they do
+not get raised a third time.
+
+### Open — `4_Open_App.bat` has never run under `cmd.exe`
+
+Written and reviewed on a Mac. The Windows-specific code it leans on is covered
+by `tests/test_windows_launch.py`, and the file's own structure was checked,
+but batch files fail in ways only `cmd.exe` shows. PR #1 asks a Windows tester
+for one run and says what to report back.
+
+- [ ] Get one full Windows run of `launchers\4_Open_App.bat`, start to finish
+
+### Settled — `safe_filename` already handles backslashes
+
+Raised as "it replaces `/` but not `\`, which is equally illegal on Windows".
+It handles both. `_ILLEGAL_FILENAME_RE` is `[<>:"/\\|?*]` and strips the
+backslash on the line after the `/` replacement:
+
+    'Trusts \ Estates'  ->  'Trusts Estates.vtt'
+
+The two are treated differently — `/` becomes " and ", `\` is dropped — but
+both produce a legal Windows filename. Reading line 249 without line 250 is
+what produced the false alarm. No change needed.
+
+### Settled — `cmd_clean` does not redo finished work
+
+Raised as "no skip-if-exists, so a re-run reprocesses every file in
+`Raw_Captions`". There is indeed no such check, but archiving stands in for
+one: `cmd_clean` calls `F.archive_source` per file as that file succeeds, so a
+finished source leaves `Raw_Captions` and the next run never sees it. What
+stays behind is what failed — which is exactly what should be re-run.
+
+The one unprotected case is `--no-archive`, where nothing moves and a second
+run does redo everything. That flag exists for trial runs, so this is arguably
+correct. Worth knowing rather than fixing.
+
 ## 2026-10-26 — `.gitignore` has an uncommitted line
 
 `_comparisons/` was added to `.gitignore` so the local comparison reports
