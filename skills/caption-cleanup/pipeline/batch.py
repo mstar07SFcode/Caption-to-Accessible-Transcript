@@ -67,7 +67,15 @@ def cmd_clean(args) -> int:
 
     sources = F.scan_sources(raw)
     if not sources:
-        print(f"No source files found in {raw}")
+        # First thing a newcomer sees if they run this before putting files in
+        # place, so say what to do rather than only what is wrong.
+        if not raw.is_dir():
+            print(f"No folder named {raw} here.")
+            print(f"  Create it and put your .srt or .txt caption files in it:")
+            print(f"    mkdir {raw}")
+        else:
+            print(f"No caption files in {raw}.")
+            print(f"  Put .srt or .txt files there and run this again.")
         return 0
 
     # Phase 1 — collect jobs (parse + deterministic clean + naming).

@@ -28,6 +28,43 @@ you run it standalone, from the **Anthropic API**.
   *or* an **Anthropic API key** to run the AI judgment standalone (`pip install
   anthropic`). Basic, deterministic cleanup needs neither.
 
+## Quickstart (clone and run, no dependencies)
+
+The core pipeline is standard library only — no `pip install`, no virtual
+environment, no API key, and it works offline. Deterministic cleanup and an
+accessible HTML transcript, straight from a clone:
+
+```bash
+git clone https://github.com/mstar07SFcode/Caption-to-Accessible-Transcript.git
+```
+
+```bash
+cd Caption-to-Accessible-Transcript && mkdir Raw_Captions
+```
+
+Put your `.srt` or `.txt` caption files in `Raw_Captions`, then:
+
+```bash
+python3 -m pipeline.batch clean --raw Raw_Captions --out Edited_Captions --archive Archived_Captions --course RHET-103 --speaker "Jane Doe"
+```
+
+```bash
+python3 -m pipeline.batch publish --edited Edited_Captions --vttout VTT_Files --html HTML_Transcripts --archive Archived_Captions
+```
+
+The transcript lands in `HTML_Transcripts/` — open it in any browser. Every
+other working folder is created for you; only `Raw_Captions` is yours to fill.
+`--course` and `--speaker` are optional, but they fill the transcript's header,
+which otherwise renders with those fields blank.
+
+Two things to know. Run these **from the repo folder**: `python3 -m
+pipeline.batch` finds the `pipeline` package in the current directory, so the
+working folders live inside the clone (they are gitignored). And this path does
+the deterministic cleanup only — the AI judgment that catches misrecognized
+words needs either Claude or an API key, both covered below.
+
+To work *on* the repo rather than with it, see `CONTRIBUTING.md`.
+
 ## Install (public repo)
 
 In **Claude Code**:
@@ -75,6 +112,10 @@ On first run a launcher asks where your caption folders are and creates the
 five subfolders if they are missing. The answer is remembered in
 `launchers/.caption_workflow` — delete that file to be asked again. Keep the
 launchers inside the project folder, next to `pipeline/`.
+
+To create those five folders somewhere yourself — a separate working folder you
+point the launchers or the app at — run `bash tools/make_folders.sh` in it. The
+CLI below does not need it: it creates every folder except `Raw_Captions`.
 
 CLI directly:
 
