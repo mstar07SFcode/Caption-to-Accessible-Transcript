@@ -17,7 +17,7 @@ import re
 
 from .parse import Cue, timecode_to_seconds
 from .judgment import PublishJudgment
-from .vtt import duration_minutes
+from .vtt import duration_phrase
 
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -50,9 +50,7 @@ TEMPLATE = """<!DOCTYPE html>
 <h1>{title}</h1>
 
 <div class="meta">
-  <p><strong>Speaker:</strong> {speaker}</p>
-  <p><strong>Course:</strong> {course}</p>
-  <p><strong>Duration:</strong> {duration} minutes (approx.)</p>
+{meta}
   <p><em>Auto-generated transcript. Edits have been applied for clarity.</em></p>
 </div>
 
@@ -190,14 +188,30 @@ def build_body(cues: list[Cue], judgment: PublishJudgment) -> str:
     return "\n".join(parts)
 
 
+def _meta_block(speaker: str, course: str, cues: list[Cue]) -> str:
+    """The header's Speaker/Course/Duration lines.
+
+    An empty Speaker or Course is omitted, not rendered as a label with
+    nothing after it. The Word renderer has always done this (`if speaker:` in
+    docx_publish); HTML used one fixed template, so a run without --speaker or
+    --course published "Speaker:" followed by blank space.
+    """
+    lines: list[str] = []
+    if speaker:
+        lines.append(f"  <p><strong>Speaker:</strong> {html.escape(speaker)}</p>")
+    if course:
+        lines.append(f"  <p><strong>Course:</strong> {html.escape(course)}</p>")
+    lines.append(
+        f"  <p><strong>Duration:</strong> {html.escape(duration_phrase(cues))}</p>")
+    return "\n".join(lines)
+
+
 def build_html(cues: list[Cue], judgment: PublishJudgment,
                *, speaker: str = "", course: str = "",
                title: str | None = None) -> str:
     final_title = html.escape(title or judgment.title or "Transcript")
     return TEMPLATE.format(
         title=final_title,
-        speaker=html.escape(speaker),
-        course=html.escape(course),
-        duration=duration_minutes(cues),
+        meta=_meta_block(speaker, course, cues),
         body=build_body(cues, judgment),
     )

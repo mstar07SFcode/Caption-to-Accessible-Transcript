@@ -14,7 +14,7 @@ from docx.shared import Pt, RGBColor
 
 from .parse import Cue, timecode_to_seconds
 from .judgment import PublishJudgment
-from .vtt import duration_minutes
+from .vtt import duration_phrase
 
 _GRAY = RGBColor(0x55, 0x55, 0x55)
 
@@ -146,7 +146,7 @@ def build_docx(cues: list[Cue], judgment: PublishJudgment,
         _meta_line("Speaker", speaker)
     if course:
         _meta_line("Course", course)
-    _meta_line("Duration", f"{duration_minutes(cues)} minutes (approx.)")
+    _meta_line("Duration", duration_phrase(cues))
 
     note = doc.add_paragraph()
     note_run = note.add_run("Auto-generated transcript. Edits have been applied for clarity.")

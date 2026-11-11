@@ -69,3 +69,21 @@ def duration_minutes(cues: list[Cue]) -> int:
         return 0
     secs = timecode_to_seconds(cues[-1].end)
     return int((secs + 30) // 60)
+
+
+def duration_phrase(cues: list[Cue]) -> str:
+    """The Duration line for a transcript header, as prose.
+
+    duration_minutes rounds to the nearest minute, so anything under 30s comes
+    back as 0 -- and a header reading "0 minutes (approx.)" is worse than one
+    that admits the clip is short. One minute is also not plural. Both
+    renderers call this so the HTML and Word headers cannot drift apart.
+    """
+    mins = duration_minutes(cues)
+    if not cues:
+        return "Unknown"
+    if mins == 0:
+        return "Under a minute"
+    if mins == 1:
+        return "1 minute (approx.)"
+    return f"{mins} minutes (approx.)"

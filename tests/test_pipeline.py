@@ -13,7 +13,7 @@ from pipeline import naming
 from pipeline import vtt as V
 from pipeline.flaglog import (write_flaglog, parse_flaglog, apply_flaglog,
                               Correction, ReviewEntry)
-from pipeline.judgment import CleanupJudgment, PublishJudgment
+from pipeline.judgment import CleanupJudgment, PublishJudgment, StubBackend
 from pipeline.apply import apply_cleanup
 from pipeline.publish import build_html, title_from_stem
 
@@ -503,6 +503,43 @@ def test_title_transform():
           "Ch.20" in title_from_stem("MBA-6008_M3_Kotler_Chapter20_WhyToGoGlobal"))
 
 
+def _srt_ending_at(end: str) -> str:
+    return f"1\n00:00:01,000 --> {end}\nSome words.\n"
+
+
+def test_transcript_header():
+    """The header lines: no blank fields, no "0 minutes", no fake section."""
+    short = P.parse_srt(_srt_ending_at("00:00:20,580"))
+    one = P.parse_srt(_srt_ending_at("00:01:10,000"))
+    many = P.parse_srt(_srt_ending_at("00:05:00,000"))
+
+    check("duration: under a minute", V.duration_phrase(short) == "Under a minute")
+    check("duration: singular", V.duration_phrase(one) == "1 minute (approx.)")
+    check("duration: plural", V.duration_phrase(many) == "5 minutes (approx.)")
+    check("duration: no cues", V.duration_phrase([]) == "Unknown")
+
+    j = PublishJudgment(title="Transcript A")
+    # Omitted metadata must not render as a label with nothing after it --
+    # this is what a CLI run without --speaker/--course produces.
+    bare = build_html(short, j, title="Transcript A")
+    check("header: no empty Speaker", "<strong>Speaker:</strong>" not in bare)
+    check("header: no empty Course", "<strong>Course:</strong>" not in bare)
+    check("header: duration still there", "Under a minute" in bare)
+    check("header: no 0 minutes", "0 minutes" not in bare)
+
+    full = build_html(many, j, speaker="Jane Doe", course="RHET-103",
+                      title="Transcript A")
+    check("header: speaker when given", "<strong>Speaker:</strong> Jane Doe" in full)
+    check("header: course when given", "<strong>Course:</strong> RHET-103" in full)
+
+    # The no-LLM backend sections nothing, so nothing claims a topic analysis
+    # that never ran.
+    stub = StubBackend().publish(short, {"title": "Transcript A"})
+    check("stub: no placeholder section", stub.sections == [])
+    check("stub: no [Transcript] heading",
+          "[Transcript]" not in build_html(short, stub, title="Transcript A"))
+
+
 # ---- per-skill copies ------------------------------------------------------
 def test_skill_sync():
     check_skill_copies_in_sync(check)
@@ -514,7 +551,8 @@ if __name__ == "__main__":
                test_vtt, test_flaglog, test_flaglog_scoping,
                test_apply_judgment, test_flag_autoapply_guards, test_publish,
                test_publish_never_adds_text, test_publish_deletion_is_opt_in,
-               test_title_transform, test_skill_sync]:
+               test_title_transform, test_transcript_header,
+               test_skill_sync]:
         print(f"\n# {fn.__name__}")
         fn()
     print(f"\n{'ALL PASSED' if check.failed == 0 else str(check.failed) + ' FAILED'}")

@@ -175,8 +175,13 @@ class StubBackend:
     def publish(self, cues: list[Cue], context: dict) -> PublishJudgment:
         return PublishJudgment(
             title=context.get("title", ""),
-            sections=[{"level": 2, "title": "Transcript", "start_entry": cues[0].index}]
-            if cues else [],
+            # No sections. Sectioning is a reading of the content, and this
+            # backend does not read anything -- it used to emit one section
+            # titled "Transcript", which published as a bracketed <h2>
+            # [Transcript] directly under the <h1> that already said so. The
+            # brackets mean "label we wrote, not words the speaker said", so
+            # that heading claimed a topic analysis no one had performed. An
+            # h1 and paragraphs are a well-formed document on their own.
             paragraph_breaks=paragraph_breaks_from_timing(cues),
         )
 

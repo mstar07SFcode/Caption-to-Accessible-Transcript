@@ -47,6 +47,9 @@ synced folders).
   <p><strong>Speaker:</strong> [from VTT header, or blank]</p>
   <p><strong>Course:</strong> [from VTT header, or blank]</p>
   <p><strong>Duration:</strong> [N] minutes (approx.)</p>
+  <!-- Speaker and Course lines are omitted entirely when not supplied, and a
+       clip under 30s reads "Under a minute" rather than "0 minutes". Both
+       renderers take this line from pipeline.vtt.duration_phrase. -->
   <p><em>Auto-generated transcript. Edits have been applied for clarity.</em></p>
 </div>
 
